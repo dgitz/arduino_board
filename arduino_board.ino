@@ -36,6 +36,7 @@ typedef struct
   int Pin_Number[PORT_SIZE];
   int Pin_Mode[PORT_SIZE];
   int Pin_Value[PORT_SIZE];
+  int Pin_DefaultValue[PORT_SIZE];
 } port;
 typedef struct
 {
@@ -59,6 +60,8 @@ Adafruit_PWMServoDriver pwm;
 
 int board_mode = BOARDMODE_BOOT;
 int node_mode = BOARDMODE_UNDEFINED;
+unsigned int armed_command = ARMEDCOMMAND_DISARM;
+unsigned int armed_state = ARMEDSTATUS_DISARMED_CANNOTARM;
 //String message_buffer = ""; // a string to hold incoming data
 unsigned char in_buffer[64];
 unsigned char recv_buffer[64];
@@ -89,6 +92,11 @@ unsigned long send_configure_dio_counter = 0;
 unsigned long recv_configure_dio_counter = 0;
 unsigned long send_set_dio_counter = 0;
 unsigned long recv_set_dio_counter = 0;
+unsigned long send_set_dio_defaultvalue_counter = 0;
+unsigned long recv_set_dio_defaultvalue_counter = 0;
+unsigned long send_armcommand_counter = 0;
+unsigned long recv_armcommand_counter = 0;
+unsigned long time_since_last_rx = 0;
 
 int temp_counter = 1000;
 bool reverse = false;
@@ -122,6 +130,7 @@ void init_shields()
       {
         shields[s].ports[p].Pin_Number[i] = pinindex++;
         shields[s].ports[p].Pin_Value[i] = 0;
+        shields[s].ports[p].Pin_DefaultValue[i] = 0;
         /*
         Serial1.print("port: ");
         Serial1.print(p,DEC);
@@ -239,15 +248,48 @@ void loop()
     recv_configure_dio_counter = 0;
     send_set_dio_counter = 0;
     recv_set_dio_counter = 0;
+    send_set_dio_defaultvalue_counter = 0;
+    recv_set_dio_defaultvalue_counter = 0;
+    send_armcommand_counter = 0;
+    recv_armcommand_counter = 0;
 
   }
 }
 
 void run_veryfastrate_code() //1000 Hz
 {
+  if(time_since_last_rx > 200)
+  {
+    armed_state = ARMEDSTATUS_DISARMED;
+  }
+  else if(board_mode != BOARDMODE_RUNNING)
+  {
+    armed_state = ARMEDSTATUS_DISARMED_CANNOTARM;
+  }
+  else if(armed_state == ARMEDSTATUS_DISARMED) //Board Mode: RUNNING
+  {
+    if(armed_command == ARMEDCOMMAND_ARM)
+    {
+      armed_state = ARMEDSTATUS_ARMED;
+    }
+    else
+    {
+      armed_state = ARMEDSTATUS_DISARMED;
+    }
+  }
+  else if(armed_state == ARMEDSTATUS_ARMED)
+  {
+    if(armed_command == ARMEDCOMMAND_DISARM)
+    {
+      armed_state = ARMEDSTATUS_DISARMED;
+    }
+  }
+  
 }
 void run_fastrate_code() //100 Hz
 {
+  time_since_last_rx++;
+  
   if(board_mode == BOARDMODE_RUNNING)
   {
     
@@ -259,10 +301,21 @@ void run_fastrate_code() //100 Hz
         {
           if(shields[s].ports[p].Pin_Mode[j] == PINMODE_PWM_OUTPUT)
           {
-            unsigned int pulse = 1000 + 3.90625*(double)(shields[s].ports[p].Pin_Value[j]);
-            if(pulse > 2000) { pulse = 2000;}
-            else if(pulse < 1000) { pulse = 1000; }
-            SERVOSHIELD_setServoPulse(shields[s].ports[p].Pin_Number[j], pulse);
+            if(armed_state == ARMEDSTATUS_ARMED)
+            {
+              unsigned int pulse = 1000 + 3.90625*(double)(shields[s].ports[p].Pin_Value[j]);
+              if(pulse > 2000) { pulse = 2000;}
+              else if(pulse < 1000) { pulse = 1000; }
+              SERVOSHIELD_setServoPulse(shields[s].ports[p].Pin_Number[j], pulse);
+            }
+            else
+            {
+              unsigned int pulse = 1000 + 3.90625*(double)(shields[s].ports[p].Pin_DefaultValue[j]);
+              if(pulse > 2000) { pulse = 2000;}
+              else if(pulse < 1000) { pulse = 1000; }
+              SERVOSHIELD_setServoPulse(shields[s].ports[p].Pin_Number[j], pulse);
+            }
+            
           }
         }
         
@@ -279,6 +332,7 @@ void run_fastrate_code() //100 Hz
     }
     if(message_checksum == computed_checksum)
     {
+      time_since_last_rx = 0;
       message_type = recv_buffer[1];
       passed_checksum_counter++;
       unsigned char packet[SERIAL_MESSAGE_SIZE-4];
@@ -292,7 +346,7 @@ void run_fastrate_code() //100 Hz
         recv_configure_shield_counter++;
         if(board_mode == BOARDMODE_INITIALIZING)
         {
-          char ShieldCount,ShieldType,ShieldID,PortCount;
+          unsigned char ShieldCount,ShieldType,ShieldID,PortCount;
           int status = serialmessagehandler.decode_Configure_ShieldSerial(packet,&ShieldCount,&ShieldType,&ShieldID,&PortCount);
           if(shield_count == -1)
           {
@@ -343,7 +397,6 @@ void run_fastrate_code() //100 Hz
             {
               
             }
-            //Do config stuff for all shields
             
           }
           if(add_new_shield == true)
@@ -357,7 +410,7 @@ void run_fastrate_code() //100 Hz
       }
       else if(message_type == SERIAL_Set_DIO_Port_ID)
       {
-        char ShieldID,PortID;
+        unsigned char ShieldID,PortID;
         unsigned char v1,v2,v3,v4,v5,v6,v7,v8;
         int status = serialmessagehandler.decode_Set_DIO_PortSerial(packet,&ShieldID,&PortID,&v1,&v2,&v3,&v4,&v5,&v6,&v7,&v8);
         for(int s = 0; s < MAXNUMBER_SHIELDS;s++)
@@ -384,24 +437,59 @@ void run_fastrate_code() //100 Hz
       }
       else if(message_type == SERIAL_Mode_ID)
       {
-        char node_id,node_status,node_type;
+        unsigned char node_id,node_status,node_type;
         int status = serialmessagehandler.decode_ModeSerial(packet,&node_type,&node_id,&node_status);
         node_mode = node_status;
         recv_mode_counter++;
       }
+      else if(message_type == SERIAL_Set_DIO_Port_DefaultValue_ID)
+      {
+        unsigned char ShieldID,PortID;
+        unsigned char v1,v2,v3,v4,v5,v6,v7,v8;
+        int status = serialmessagehandler.decode_Set_DIO_Port_DefaultValueSerial(packet,&ShieldID,&PortID,&v1,&v2,&v3,&v4,&v5,&v6,&v7,&v8);
+        for(int s = 0; s < MAXNUMBER_SHIELDS;s++)
+        {
+          if(shields[s].id == ShieldID)
+          {
+            for(int p = 0; p < MAXNUMBER_PORTS_PERSHIELD;p++)
+            {
+              if(shields[s].ports[p].id == PortID)
+              {
+                shields[s].ports[p].Pin_DefaultValue[0] = v1;
+                shields[s].ports[p].Pin_DefaultValue[1] = v2;
+                shields[s].ports[p].Pin_DefaultValue[2] = v3;
+                shields[s].ports[p].Pin_DefaultValue[3] = v4;
+                shields[s].ports[p].Pin_DefaultValue[4] = v5;
+                shields[s].ports[p].Pin_DefaultValue[5] = v6;
+                shields[s].ports[p].Pin_DefaultValue[6] = v7;
+                shields[s].ports[p].Pin_DefaultValue[7] = v8;
+              }
+            }
+          }
+        }
+        recv_set_dio_defaultvalue_counter++;
+      }
+      else if(message_type == SERIAL_Arm_Command_ID)
+      {
+        recv_armcommand_counter++;
+        unsigned char Command;
+        int status = serialmessagehandler.decode_Arm_CommandSerial(packet,&Command);
+        armed_command = Command;
+      }
       else if(message_type == SERIAL_Configure_DIO_Port_ID)
       {
+        
         recv_configure_dio_counter++;
-        char ShieldID,PortID;
-        char v1,v2,v3,v4,v5,v6,v7,v8;
+        unsigned char ShieldID,PortID;
+        unsigned char v1,v2,v3,v4,v5,v6,v7,v8;
         
         int status = serialmessagehandler.decode_Configure_DIO_PortSerial(packet,&ShieldID,&PortID,&v1,&v2,&v3,&v4,&v5,&v6,&v7,&v8);
+        
         for(int s = 0; s < MAXNUMBER_SHIELDS; s++)
         {
           if(shields[s].id == ShieldID)
           {
             bool add_new_port = false;
-            int configured_port_counter = 0;
             int p;
             for(p = 0; p < PORT_SIZE; p++)
             {
@@ -409,20 +497,10 @@ void run_fastrate_code() //100 Hz
               {
                 add_new_port = true;
               }
-              else
-              {
-                configured_port_counter++;
-              }
               if(add_new_port == true)
               {
                 break;
               }
-            }
-            if((shields[s].portcount > 0) &&
-             (configured_port_counter == shields[s].portcount))
-            {
-              board_mode = BOARDMODE_INITIALIZED;
-              add_new_port = false;
             }
             if(add_new_port == true)
             {             
@@ -435,6 +513,19 @@ void run_fastrate_code() //100 Hz
               shields[s].ports[p].Pin_Mode[5] = v6;
               shields[s].ports[p].Pin_Mode[6] = v7;
               shields[s].ports[p].Pin_Mode[7] = v8;
+            }
+            int configured_port_counter = 0;
+            for(int i = 0; i < MAXNUMBER_PORTS_PERSHIELD; i++)
+            {
+              if(shields[s].ports[i].id >= 0)
+              {
+                configured_port_counter++;
+              }
+            }
+            if((shields[s].portcount > 0) &&
+             (configured_port_counter == shields[s].portcount))
+            {
+              board_mode = BOARDMODE_INITIALIZED;
             }
           }
         }
@@ -451,7 +542,6 @@ void run_fastrate_code() //100 Hz
 }
 void run_mediumrate_code() //10 Hz
 {
- 
   //Serial1.println(board_mode,DEC);
   {
     char buffer[16];
@@ -488,6 +578,7 @@ void run_slowrate_code() //1 Hz
   if(board_mode == BOARDMODE_INITIALIZED)
   {
     board_mode = BOARDMODE_RUNNING;
+    armed_state = ARMEDSTATUS_DISARMED;
   }
   if((board_mode == BOARDMODE_RUNNING) && (node_mode == BOARDMODE_INITIALIZING))
   {
@@ -539,7 +630,7 @@ void run_veryslowrate_code() //0.1 Hz
     Serial1.print(1000.0*(double)recv_configure_dio_counter/(double)loop_counter);
     Serial1.println(" (Hz)");
     
-    Serial1.print("Set DIO Configure (0xAB18) times: ");
+    Serial1.print("Send Set DIO (0xAB18) times: ");
     Serial1.print(send_set_dio_counter,DEC);
     Serial1.print(" at: ");
     Serial1.print(1000.0*(double)send_set_dio_counter/(double)loop_counter);
@@ -549,36 +640,28 @@ void run_veryslowrate_code() //0.1 Hz
     Serial1.print(1000.0*(double)recv_set_dio_counter/(double)loop_counter);
     Serial1.println(" (Hz)");
     
+    Serial1.print("Send Set DIO DefaultValue (0xAB32) times: ");
+    Serial1.print(send_set_dio_defaultvalue_counter,DEC);
+    Serial1.print(" at: ");
+    Serial1.print(1000.0*(double)send_set_dio_defaultvalue_counter/(double)loop_counter);
+    Serial1.print(" (Hz) Received times: ");
+    Serial1.print(recv_set_dio_defaultvalue_counter,DEC);
+    Serial1.print(" at: ");
+    Serial1.print(1000.0*(double)recv_set_dio_defaultvalue_counter/(double)loop_counter);
+    Serial1.println(" (Hz)");
     
-    /*
-    if((BOARD_TYPE == BOARDTYPE_ARDUINOMEGA) && (board_mode == BOARDMODE_RUNNING))
-    {
-      for(int s = 0; s < MAXNUMBER_SHIELDS; s++)
-      {
-        if(shields[s].id > -1)
-        {
-          for(int p = 0; p < MAXNUMBER_PORTS_PERSHIELD; p++)
-          {
-            if(shields[s].ports[p].id > -1)
-            {
-              Serial1.print("Shield Configuration: ID");
-              Serial1.print(shields[s].id,DEC);
-              Serial1.print(" Port ID: ");
-              Serial1.println(shields[s].ports[p].id);
-              for(int i = 0; i < PORT_SIZE; i++)
-              {
-                Serial1.print(" i: ");
-                Serial1.print(shields[s].ports[p].Pin_Number[i],DEC);
-                Serial1.print(" mode: ");
-                Serial1.print(shields[s].ports[p].Pin_Mode[i],DEC);
-              }
-              Serial1.println("");
-            }
-          }
-        }
-      }
-    }
-    */
+    Serial1.print("Send ArmCommand (0xAB27) times: ");
+    Serial1.print(send_armcommand_counter,DEC);
+    Serial1.print(" at: ");
+    Serial1.print(1000.0*(double)send_armcommand_counter/(double)loop_counter);
+    Serial1.print(" (Hz) Received times: ");
+    Serial1.print(recv_armcommand_counter,DEC);
+    Serial1.print(" at: ");
+    Serial1.print(1000.0*(double)recv_armcommand_counter/(double)loop_counter);
+    Serial1.println(" (Hz)");
+    
+    
+
    
   }
   for(int s = 0; s < MAXNUMBER_SHIELDS;s++)
@@ -600,7 +683,6 @@ void run_veryslowrate_code() //0.1 Hz
     }
   }
 }
-
 void serialEvent() 
 {
   if(message_complete == false)
@@ -610,19 +692,13 @@ void serialEvent()
     int bytestoread = SERIAL_MESSAGE_SIZE;
     int bytecounter = 0;
     InBuffer = "";
-    //Serial1.print("in: ");
     while((Serial.available()) && (bytecounter < bytestoread))
     {
       c = Serial.read();  
      delay(1);   
-      //Serial1.print(" ");
-      //Serial1.print(c,HEX);
-      //Serial1.print(" count: ");
-      //Serial1.print(bytecounter,DEC);
       recv_buffer[bytecounter++] = c;
       
     }
-    //Serial1.println("");
     if((BOARD_TYPE == BOARDTYPE_ARDUINOMEGA) && (PRINT_RECV_BUFFER == 1))
     {
       for(int i = 0; i < SERIAL_MESSAGE_SIZE; i++)
