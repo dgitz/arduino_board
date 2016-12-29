@@ -1,1 +1,38 @@
-/home/robot/catkin_ws/src/icarus_rover_v2/include/Definitions.h
+#ifndef __DEFINITIONS_INCLUDED__   
+#define __DEFINITIONS_INCLUDED__
+#include "eROS_Definitions.h"
+//Armed State Definitions
+
+//Gear Definitions
+#define GEAR_FORWARD 1
+#define GEAR_PARK    0
+#define GEAR_REVERSE -1
+
+//Pin Mode Definitions
+#define PINMODE_UNDEFINED 0
+#define PINMODE_DIGITAL_OUTPUT 1
+#define PINMODE_DIGITAL_INPUT 2
+#define PINMODE_ANALOG_INPUT 3
+#define PINMODE_FORCESENSOR_INPUT 4  //icarus_rover_v2::pin Value will be in units: grams
+#define PINMODE_ULTRASONIC_INPUT 5
+#define PINMODE_QUADRATUREENCODER_INPUT 6
+#define PINMODE_PWM_OUTPUT 7
+#define PINMODE_DIGITAL_OUTPUT_NON_ACTUATOR 8
+#define PINMODE_PWM_OUTPUT_NON_ACTUATOR 9
+#define PINMODE_ARMCOMMAND_OUTPUT 253
+#define PINMODE_ARMCOMMAND_INPUT 254
+#define PINMODE_NOCHANGE 255
+
+//Board Mode Definitions
+#define BOARDMODE_UNDEFINED 0
+#define BOARDMODE_BOOT 1
+#define BOARDMODE_INITIALIZING 2
+#define BOARDMODE_SHIELDS_CONFIGURED 3
+#define BOARDMODE_INITIALIZED 4
+#define BOARDMODE_RUNNING 5
+#define BOARDMODE_STOPPED 6
+
+//Control Group Definitions
+#define CONTROLGROUP_MODE_UNDEFINED 0
+#define GPIO_PORT_UNDEFINED 0
+#endif

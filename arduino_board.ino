@@ -8,15 +8,16 @@
 #include "Definitions.h"
 #include <Adafruit_PWMServoDriver.h>
 #include <Wire.h>
+#include <avr/wdt.h>
 
 //Debugging Defines
-#define PRINT_RECV_BUFFER 0
+#define PRINT_RECV_BUFFER 1
 #define PRINT_DEBUG_LINES 0
 
 
-#define BOARD_ID 18
+#define BOARD_ID 17
 #define BOARD_TYPE BOARDTYPE_ARDUINOMEGA
-#define MAXNUMBER_SHIELDS 8
+#define MAXNUMBER_SHIELDS 4
 #define MAXNUMBER_PORTS_PERSHIELD 4
 #define PORT_SIZE        8
 #define SERIAL_MESSAGE_SIZE 16 //Start Delimiter thru Checksum
@@ -26,9 +27,6 @@
 #define SERVOSHIELD_UPDATE_RATE 50
 #define SERVOSHIELD_SERVO_MIN 224
 #define SERVOSHIELD_SERVO_MAX 480
-
-String InBuffer = "";
-String ProcessBuffer = "";
 
 typedef struct
 {
@@ -62,9 +60,7 @@ int board_mode = BOARDMODE_BOOT;
 int node_mode = BOARDMODE_UNDEFINED;
 unsigned int armed_command = ARMEDCOMMAND_DISARM;
 unsigned int armed_state = ARMEDSTATUS_DISARMED_CANNOTARM;
-//String message_buffer = ""; // a string to hold incoming data
-unsigned char in_buffer[64];
-unsigned char recv_buffer[64];
+unsigned char recv_buffer[32];
 int available_i2c_devices[MAXNUMBER_SHIELDS*2];
 int current_message_buffer_length = 0;
 int message_length = 0;
@@ -146,15 +142,15 @@ void init_shields()
   }
 }
 void setup() {
-  InBuffer.reserve(200);
-  ProcessBuffer.reserve(200);
+  wdt_disable();
+  wdt_enable(WDTO_1S);
   memset(recv_buffer,0,sizeof(recv_buffer));
   pinMode(led,OUTPUT);
   Serial.begin(115200);
   //Serial.setTimeout(1000);
   while(Serial.read() >= 0);
   Serial.flush();
-  if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
+  #if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
   {
     Serial1.begin(115200);
     Serial1.setTimeout(1000);
@@ -162,15 +158,21 @@ void setup() {
     Serial1.flush();
     Serial1.println("Board Booting");
   }
+  #endif
   
   
-
+  wdt_reset();
   init_shields();
+  
+  wdt_reset();
   scan_for_shields();
-  if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
+  wdt_reset();
+  
+  #if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
   {
     Serial1.println("Board Executing");
   }
+  #endif
 }
 
 void scan_for_shields()
@@ -180,6 +182,7 @@ void scan_for_shields()
   int found_index = 0;
   for(int i = 1; i < 127; i++)
   {
+    wdt_reset();
     Wire.beginTransmission(i);
     //Wire.write(1);
     error = Wire.endTransmission();
@@ -192,7 +195,7 @@ void scan_for_shields()
     }
     delay(10);
   }
-  if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
+  #if BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
   {  
     for(int i = 0; i < found_index; i++)
     {
@@ -200,9 +203,11 @@ void scan_for_shields()
       Serial1.println(available_i2c_devices[i],HEX);
     }
   }
+  #endif
 }
 void loop() 
 { 
+  wdt_reset();
 
   //SERVOSHIELD_setServoPulse(0, 2000);
   delay(1); //Delay 1 millisecond
@@ -258,10 +263,19 @@ void loop()
 
 void run_veryfastrate_code() //1000 Hz
 {
+  //Serial1.println(time_since_last_rx,DEC);
+  /*if(time_since_last_rx > 1000)
+  {
+    Serial1.println("No data from Node in a long time.  Rebooting");
+    delay(50);
+    resetFunc();
+  }
+  */
   if(time_since_last_rx > 200)
   {
     armed_state = ARMEDSTATUS_DISARMED;
   }
+  
   else if(board_mode != BOARDMODE_RUNNING)
   {
     armed_state = ARMEDSTATUS_DISARMED_CANNOTARM;
@@ -340,7 +354,6 @@ void run_fastrate_code() //100 Hz
       {
         packet[i] = recv_buffer[i+3]; 
       }
-      
       if(message_type == SERIAL_Configure_Shield_ID)
       {
         recv_configure_shield_counter++;
@@ -582,8 +595,8 @@ void run_slowrate_code() //1 Hz
   }
   if((board_mode == BOARDMODE_RUNNING) && (node_mode == BOARDMODE_INITIALIZING))
   {
-    Serial1.println("Rebooting");
-      resetFunc();
+    delay(50);
+    resetFunc();
   }
   
   digitalWrite(led,!digitalRead(led));
@@ -591,7 +604,8 @@ void run_slowrate_code() //1 Hz
 }
 void run_veryslowrate_code() //0.1 Hz
 {
-  if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
+  
+  #if BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
   {
     
     
@@ -658,12 +672,11 @@ void run_veryslowrate_code() //0.1 Hz
     Serial1.print(recv_armcommand_counter,DEC);
     Serial1.print(" at: ");
     Serial1.print(1000.0*(double)recv_armcommand_counter/(double)loop_counter);
-    Serial1.println(" (Hz)");
-    
-    
-
-   
+    Serial1.println(" (Hz)");   
   }
+  #endif
+  
+  
   for(int s = 0; s < MAXNUMBER_SHIELDS;s++)
   {
     int pinindex = 0;
@@ -687,11 +700,9 @@ void serialEvent()
 {
   if(message_complete == false)
   {
-    
     char c;
     int bytestoread = SERIAL_MESSAGE_SIZE;
     int bytecounter = 0;
-    InBuffer = "";
     while((Serial.available()) && (bytecounter < bytestoread))
     {
       c = Serial.read();  
@@ -699,6 +710,7 @@ void serialEvent()
       recv_buffer[bytecounter++] = c;
       
     }
+    /*
     if((BOARD_TYPE == BOARDTYPE_ARDUINOMEGA) && (PRINT_RECV_BUFFER == 1))
     {
       for(int i = 0; i < SERIAL_MESSAGE_SIZE; i++)
@@ -708,6 +720,7 @@ void serialEvent()
       }
       Serial1.println("");
     }
+    */
     message_complete = true;
 
   }
