@@ -18,7 +18,11 @@
 #define BOARD_ID 17
 #define BOARD_TYPE BOARDTYPE_ARDUINOMEGA
 #define MAXNUMBER_SHIELDS 4
-#define MAXNUMBER_PORTS_PERSHIELD 4
+#if BOARD_TYPE == BOARDTYPE_ARDUINOUNO
+  #define MAXNUMBER_PORTS_PERSHIELD 2
+#elif BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
+  #define MAXNUMBER_PORTS_PERSHIELD 4
+#endif
 #define PORT_SIZE        8
 #define SERIAL_MESSAGE_SIZE 16 //Start Delimiter thru Checksum
 
@@ -519,13 +523,21 @@ void run_fastrate_code() //100 Hz
             {             
               shields[s].ports[p].id = PortID;
               shields[s].ports[p].Pin_Mode[0] = v1;
+              if(v1 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[0] = 127; }
               shields[s].ports[p].Pin_Mode[1] = v2;
+              if(v2 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[1] = 127; }
               shields[s].ports[p].Pin_Mode[2] = v3;
+              if(v3 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[2] = 127; }
               shields[s].ports[p].Pin_Mode[3] = v4;
+              if(v4 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[3] = 127; }
               shields[s].ports[p].Pin_Mode[4] = v5;
+              if(v5 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[4] = 127; }
               shields[s].ports[p].Pin_Mode[5] = v6;
+              if(v6 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[5] = 127; }
               shields[s].ports[p].Pin_Mode[6] = v7;
+              if(v7 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[6] = 127; }
               shields[s].ports[p].Pin_Mode[7] = v8;
+              if(v8 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[7] = 127; }
             }
             int configured_port_counter = 0;
             for(int i = 0; i < MAXNUMBER_PORTS_PERSHIELD; i++)
