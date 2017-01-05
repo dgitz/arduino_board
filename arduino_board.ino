@@ -19,9 +19,9 @@
 #define BOARD_TYPE BOARDTYPE_ARDUINOMEGA
 #define MAXNUMBER_SHIELDS 4
 #if BOARD_TYPE == BOARDTYPE_ARDUINOUNO
-  #define MAXNUMBER_PORTS_PERSHIELD 2
+#define MAXNUMBER_PORTS_PERSHIELD 2
 #elif BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
-  #define MAXNUMBER_PORTS_PERSHIELD 4
+#define MAXNUMBER_PORTS_PERSHIELD 2
 #endif
 #define PORT_SIZE        8
 #define SERIAL_MESSAGE_SIZE 16 //Start Delimiter thru Checksum
@@ -310,7 +310,6 @@ void run_fastrate_code() //100 Hz
   
   if(board_mode == BOARDMODE_RUNNING)
   {
-    
     for(int s = 0; s < MAXNUMBER_SHIELDS;s++)
     {
       for(int p = 0; p < MAXNUMBER_PORTS_PERSHIELD;p++)
@@ -332,6 +331,7 @@ void run_fastrate_code() //100 Hz
               if(pulse > 2000) { pulse = 2000;}
               else if(pulse < 1000) { pulse = 1000; }
               SERVOSHIELD_setServoPulse(shields[s].ports[p].Pin_Number[j], pulse);
+              
             }
             
           }
@@ -473,13 +473,21 @@ void run_fastrate_code() //100 Hz
               if(shields[s].ports[p].id == PortID)
               {
                 shields[s].ports[p].Pin_DefaultValue[0] = v1;
+                shields[s].ports[p].Pin_Value[0] = v1;
                 shields[s].ports[p].Pin_DefaultValue[1] = v2;
+                shields[s].ports[p].Pin_Value[1] = v2;
                 shields[s].ports[p].Pin_DefaultValue[2] = v3;
+                shields[s].ports[p].Pin_Value[2] = v3;
                 shields[s].ports[p].Pin_DefaultValue[3] = v4;
+                shields[s].ports[p].Pin_Value[3] = v4;
                 shields[s].ports[p].Pin_DefaultValue[4] = v5;
+                shields[s].ports[p].Pin_Value[4] = v5;
                 shields[s].ports[p].Pin_DefaultValue[5] = v6;
+                shields[s].ports[p].Pin_Value[5] = v6;
                 shields[s].ports[p].Pin_DefaultValue[6] = v7;
+                shields[s].ports[p].Pin_Value[6] = v7;
                 shields[s].ports[p].Pin_DefaultValue[7] = v8;
+                shields[s].ports[p].Pin_Value[7] = v8;
               }
             }
           }
