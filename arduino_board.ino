@@ -15,8 +15,8 @@
 #define PRINT_DEBUG_LINES 0
 
 
-#define BOARD_ID 17
-#define BOARD_TYPE BOARDTYPE_ARDUINOMEGA
+#define BOARD_ID 18
+#define BOARD_TYPE BOARDTYPE_ARDUINOUNO
 #define MAXNUMBER_SHIELDS 4
 #if BOARD_TYPE == BOARDTYPE_ARDUINOUNO
 #define MAXNUMBER_PORTS_PERSHIELD 2
@@ -76,6 +76,10 @@ boolean message_started = false;
 boolean message_complete = false;  // whether the string is complete
 bool new_message = false;
 SerialMessageHandler serialmessagehandler;
+
+#if(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
+SoftwareSerial softSerial(2, 3); // RX, TX
+#endif
 
 int veryfastrate_counter = 0;
 int fastrate_counter = 0;
@@ -162,9 +166,13 @@ void setup() {
     Serial1.flush();
     Serial1.println("Board Booting");
   }
+  #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
+  {
+    softSerial.begin(115200);
+    softSerial.println("Board Booting");
+  }
   #endif
-  
-  
+
   wdt_reset();
   init_shields();
   
@@ -176,7 +184,11 @@ void setup() {
   {
     Serial1.println("Board Executing");
   }
-  #endif
+  #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
+  {
+    softSerial.println("Board Executing");
+  }
+ #endif
 }
 
 void scan_for_shields()
@@ -205,6 +217,14 @@ void scan_for_shields()
     {
       Serial1.print("Found I2C Device at Address: ");
       Serial1.println(available_i2c_devices[i],HEX);
+    }
+  }
+  #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
+  {
+    for(int i = 0; i < found_index; i++)
+    {
+      softSerial.print("Found I2C Device at Address: ");
+      softSerial.println(available_i2c_devices[i],HEX);
     }
   }
   #endif
@@ -320,20 +340,40 @@ void run_fastrate_code() //100 Hz
           {
             if(armed_state == ARMEDSTATUS_ARMED)
             {
-              unsigned int pulse = 1000 + 3.90625*(double)(shields[s].ports[p].Pin_Value[j]);
-              if(pulse > 2000) { pulse = 2000;}
-              else if(pulse < 1000) { pulse = 1000; }
-              SERVOSHIELD_setServoPulse(shields[s].ports[p].Pin_Number[j], pulse);
+              if(shields[s].type == SHIELDTYPE_SERVOSHIELD)
+              {
+                unsigned int pulse = 1000 + 3.90625*(double)(shields[s].ports[p].Pin_Value[j]);
+                if(pulse > 2000) { pulse = 2000;}
+                else if(pulse < 1000) { pulse = 1000; }
+                SERVOSHIELD_setServoPulse(shields[s].ports[p].Pin_Number[j], pulse);
+              }
             }
             else
             {
-              unsigned int pulse = 1000 + 3.90625*(double)(shields[s].ports[p].Pin_DefaultValue[j]);
-              if(pulse > 2000) { pulse = 2000;}
-              else if(pulse < 1000) { pulse = 1000; }
-              SERVOSHIELD_setServoPulse(shields[s].ports[p].Pin_Number[j], pulse);
+              if(shields[s].type == SHIELDTYPE_SERVOSHIELD)
+              {
+                unsigned int pulse = 1000 + 3.90625*(double)(shields[s].ports[p].Pin_DefaultValue[j]);
+                if(pulse > 2000) { pulse = 2000;}
+                else if(pulse < 1000) { pulse = 1000; }
+                SERVOSHIELD_setServoPulse(shields[s].ports[p].Pin_Number[j], pulse);
+              }
               
             }
             
+          }
+          if(shields[s].ports[p].Pin_Mode[j] == PINMODE_DIGITAL_OUTPUT_NON_ACTUATOR)
+          {
+              if(shields[s].type == SHIELDTYPE_RELAYSHIELD)
+              {
+                if(shields[s].ports[p].Pin_Value[j] == 1)
+                {
+                   digitalWrite(shields[s].ports[p].Pin_Number[j],HIGH);
+                }
+                else
+                {
+                  digitalWrite(shields[s].ports[p].Pin_Number[j],LOW);
+                }
+              }
           }
         }
         
@@ -436,6 +476,7 @@ void run_fastrate_code() //100 Hz
           {
             for(int p = 0; p < MAXNUMBER_PORTS_PERSHIELD;p++)
             {
+              
               if(shields[s].ports[p].id == PortID)
               {
                 shields[s].ports[p].Pin_Value[0] = v1;
@@ -531,21 +572,85 @@ void run_fastrate_code() //100 Hz
             {             
               shields[s].ports[p].id = PortID;
               shields[s].ports[p].Pin_Mode[0] = v1;
-              if(v1 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[0] = 127; }
+              if(v1 == PINMODE_PWM_OUTPUT) 
+              { 
+                shields[s].ports[p].Pin_DefaultValue[0] = 127; 
+              }
+              else if(shields[s].id == 0)
+              {
+                if(v1 == PINMODE_DIGITAL_INPUT) { pinMode(shields[s].ports[p].Pin_Number[0],INPUT); }
+                else { pinMode(shields[s].ports[p].Pin_Number[0],OUTPUT); }
+              }
               shields[s].ports[p].Pin_Mode[1] = v2;
-              if(v2 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[1] = 127; }
+              if(v2 == PINMODE_PWM_OUTPUT) 
+              { 
+                shields[s].ports[p].Pin_DefaultValue[1] = 127; 
+              }
+              else if(shields[s].id == 0)
+              {
+                if(v2 == PINMODE_DIGITAL_INPUT) { pinMode(shields[s].ports[p].Pin_Number[1],INPUT); }
+                else { pinMode(shields[s].ports[p].Pin_Number[1],OUTPUT); }
+              }
               shields[s].ports[p].Pin_Mode[2] = v3;
-              if(v3 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[2] = 127; }
+              if(v3 == PINMODE_PWM_OUTPUT) 
+              { 
+                shields[s].ports[p].Pin_DefaultValue[2] = 127; 
+              }
+              else if(shields[s].id == 0)
+              {
+                if(v3 == PINMODE_DIGITAL_INPUT) { pinMode(shields[s].ports[p].Pin_Number[2],INPUT); }
+                else { pinMode(shields[s].ports[p].Pin_Number[2],OUTPUT); }
+              }
               shields[s].ports[p].Pin_Mode[3] = v4;
-              if(v4 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[3] = 127; }
+              if(v4 == PINMODE_PWM_OUTPUT) 
+              { 
+                shields[s].ports[p].Pin_DefaultValue[3] = 127; 
+              }
+              else if(shields[s].id == 0)
+              {
+                if(v4 == PINMODE_DIGITAL_INPUT) { pinMode(shields[s].ports[p].Pin_Number[3],INPUT); }
+                else { pinMode(shields[s].ports[p].Pin_Number[3],OUTPUT); }
+              }
               shields[s].ports[p].Pin_Mode[4] = v5;
-              if(v5 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[4] = 127; }
+              if(v5 == PINMODE_PWM_OUTPUT) 
+              {
+                shields[s].ports[p].Pin_DefaultValue[4] = 127; 
+              }
+              else if(shields[s].id == 0)
+              {
+                if(v5 == PINMODE_DIGITAL_INPUT) { pinMode(shields[s].ports[p].Pin_Number[4],INPUT); }
+                else { pinMode(shields[s].ports[p].Pin_Number[4],OUTPUT); }
+              }
               shields[s].ports[p].Pin_Mode[5] = v6;
-              if(v6 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[5] = 127; }
+              if(v6 == PINMODE_PWM_OUTPUT) 
+              { 
+                shields[s].ports[p].Pin_DefaultValue[5] = 127; 
+              }
+              else if(shields[s].id == 0)
+              {
+                if(v6 == PINMODE_DIGITAL_INPUT) { pinMode(shields[s].ports[p].Pin_Number[5],INPUT); }
+                else { pinMode(shields[s].ports[p].Pin_Number[5],OUTPUT); }
+              }
               shields[s].ports[p].Pin_Mode[6] = v7;
-              if(v7 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[6] = 127; }
+              if(v7 == PINMODE_PWM_OUTPUT) 
+              { 
+                shields[s].ports[p].Pin_DefaultValue[6] = 127; 
+              }
+              else if(shields[s].id == 0)
+              {
+                if(v7 == PINMODE_DIGITAL_INPUT) { pinMode(shields[s].ports[p].Pin_Number[6],INPUT); }
+                else { pinMode(shields[s].ports[p].Pin_Number[7],OUTPUT); }
+              }
               shields[s].ports[p].Pin_Mode[7] = v8;
-              if(v8 == PINMODE_PWM_OUTPUT) { shields[s].ports[p].Pin_DefaultValue[7] = 127; }
+              if(v8 == PINMODE_PWM_OUTPUT) 
+              { 
+                shields[s].ports[p].Pin_DefaultValue[7] = 127; 
+              }
+              else if(shields[s].id == 0)
+              {
+                if(v8 == PINMODE_DIGITAL_INPUT) { pinMode(shields[s].ports[p].Pin_Number[7],INPUT); }
+                else { pinMode(shields[s].ports[p].Pin_Number[7],OUTPUT); }
+              }
             }
             int configured_port_counter = 0;
             for(int i = 0; i < MAXNUMBER_PORTS_PERSHIELD; i++)
@@ -627,8 +732,6 @@ void run_veryslowrate_code() //0.1 Hz
   
   #if BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
   {
-    
-    
     Serial1.print("Passed Checksum: ");
     Serial1.print(passed_checksum_counter,DEC);
     Serial1.print(" Failed Checksum: ");
@@ -693,6 +796,73 @@ void run_veryslowrate_code() //0.1 Hz
     Serial1.print(" at: ");
     Serial1.print(1000.0*(double)recv_armcommand_counter/(double)loop_counter);
     Serial1.println(" (Hz)");   
+  }
+  #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
+  {
+    softSerial.print("Passed Checksum: ");
+    softSerial.print(passed_checksum_counter,DEC);
+    softSerial.print(" Failed Checksum: ");
+    softSerial.println(failed_checksum_counter,DEC);
+    
+    softSerial.print("Sent Mode (0xAB17) times: ");
+    softSerial.print(send_mode_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)send_mode_counter/(double)loop_counter);
+    softSerial.print(" (Hz) Received times: ");
+    softSerial.print(recv_mode_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)recv_mode_counter/(double)loop_counter);
+    softSerial.println(" (Hz)");
+    
+    softSerial.print("Sent Shield Configure (0xAB33) times: ");
+    softSerial.print(send_configure_shield_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)send_configure_shield_counter/(double)loop_counter);
+    softSerial.print(" (Hz) Received times: ");
+    softSerial.print(recv_configure_shield_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)recv_configure_shield_counter/(double)loop_counter);
+    softSerial.println(" (Hz)");
+    
+    softSerial.print("Send DIO Configure (0xAB16) times: ");
+    softSerial.print(send_configure_dio_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)send_configure_dio_counter/(double)loop_counter);
+    softSerial.print(" (Hz) Received times: ");
+    softSerial.print(recv_configure_dio_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)recv_configure_dio_counter/(double)loop_counter);
+    softSerial.println(" (Hz)");
+    
+    softSerial.print("Send Set DIO (0xAB18) times: ");
+    softSerial.print(send_set_dio_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)send_set_dio_counter/(double)loop_counter);
+    softSerial.print(" (Hz) Received times: ");
+    softSerial.print(recv_set_dio_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)recv_set_dio_counter/(double)loop_counter);
+    softSerial.println(" (Hz)");
+    
+    softSerial.print("Send Set DIO DefaultValue (0xAB32) times: ");
+    softSerial.print(send_set_dio_defaultvalue_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)send_set_dio_defaultvalue_counter/(double)loop_counter);
+    softSerial.print(" (Hz) Received times: ");
+    softSerial.print(recv_set_dio_defaultvalue_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)recv_set_dio_defaultvalue_counter/(double)loop_counter);
+    softSerial.println(" (Hz)");
+    
+    softSerial.print("Send ArmCommand (0xAB27) times: ");
+    softSerial.print(send_armcommand_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)send_armcommand_counter/(double)loop_counter);
+    softSerial.print(" (Hz) Received times: ");
+    softSerial.print(recv_armcommand_counter,DEC);
+    softSerial.print(" at: ");
+    softSerial.print(1000.0*(double)recv_armcommand_counter/(double)loop_counter);
+    softSerial.println(" (Hz)");   
   }
   #endif
   
