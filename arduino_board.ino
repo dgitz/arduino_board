@@ -1,6 +1,6 @@
 #define FIRMWARE_MAJOR_VERSION 0
-#define FIRMWARE_MINOR_VERSION 1
-#define FIRMWARE_BUILD_NUMBER 0
+#define FIRMWARE_MINOR_VERSION 2
+#define FIRMWARE_BUILD_NUMBER 1
 
 #include "Arduino.h"
 #include <SoftwareSerial.h>
@@ -15,8 +15,8 @@
 #define PRINT_DEBUG_LINES 0
 
 
-#define BOARD_ID 18
-#define BOARD_TYPE BOARDTYPE_ARDUINOUNO
+#define BOARD_ID 17
+#define BOARD_TYPE BOARDTYPE_ARDUINOMEGA
 #define MAXNUMBER_SHIELDS 4
 #if BOARD_TYPE == BOARDTYPE_ARDUINOUNO
 #define MAXNUMBER_PORTS_PERSHIELD 2
@@ -164,15 +164,27 @@ void setup() {
     Serial1.setTimeout(1000);
     while(Serial1.read() >= 0);
     Serial1.flush();
-    Serial1.println("Board Booting");
+    Serial1.println("ArduinoBoard Booting");
+    Serial1.print("FW Major Version: ");
+    Serial1.println(FIRMWARE_MAJOR_VERSION,DEC);
+    Serial1.print("FW Minor Version: ");
+    Serial1.println(FIRMWARE_MINOR_VERSION,DEC);
+    Serial1.print("FW Build Number: ");
+    Serial1.println(FIRMWARE_BUILD_NUMBER,DEC);
   }
   #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
   {
     softSerial.begin(115200);
-    softSerial.println("Board Booting");
+    softSerial.println("ArduinoBoard Booting");
+    softSerial.print("FW Major Version: ");
+    softSerial.println(FIRMWARE_MAJOR_VERSION,DEC);
+    softSerial.print("FW Minor Version: ");
+    softSerial.println(FIRMWARE_MINOR_VERSION,DEC);
+    softSerial.print("FW Build Number: ");
+    softSerial.println(FIRMWARE_BUILD_NUMBER,DEC);
   }
   #endif
-
+  delay(500);
   wdt_reset();
   init_shields();
   
@@ -720,7 +732,12 @@ void run_slowrate_code() //1 Hz
   }
   if((board_mode == BOARDMODE_RUNNING) && (node_mode == BOARDMODE_INITIALIZING))
   {
-    delay(50);
+    #if BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
+    {
+      Serial1.println("Arduino Board Rebooting.");
+    }
+    #endif
+    delay(500);
     resetFunc();
   }
   
