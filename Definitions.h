@@ -35,4 +35,13 @@
 //Control Group Definitions
 #define CONTROLGROUP_MODE_UNDEFINED 0
 #define GPIO_PORT_UNDEFINED 0
+
+//Joint Definitions
+#define JOINTTYPE_UNDEFINED 0
+#define JOINTTYPE_REVOLUTE 1
+#define JOINTTYPE_UNKNOWN 2
+
+//Joint State Definitions
+#define JOINTSTATE_UNDEFINED 0
+#define JOINTSTATE_INITIALIZING 1
 #endif
