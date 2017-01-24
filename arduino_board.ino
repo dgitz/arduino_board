@@ -25,6 +25,7 @@
 #endif
 #define PORT_SIZE        8
 #define SERIAL_MESSAGE_SIZE 16 //Start Delimiter thru Checksum
+#define TICK_PER_CDEG 0.08f
 
 //Defines for Individual Shields
 //SERVOSHIELD
@@ -48,11 +49,16 @@ typedef struct
   int PositionSensor_Type;
   int Pin_PositionSensorA;
   int Pin_PositionSensorB;
-  int Current_Position_cdeg; //centidegrees, ranges from [-18000,18000] 
-  int Target_Position_cdeg; //centidegrees, ranges from [-18000,18000] 
+  double Rotation_Ratio; //The ratio of how many rotations the Angle Sensor makes and how many rotations the Joint makes
+  double Current_Position_cdeg; //centidegrees, ranges from [-18000,18000] 
+  double Target_Position_cdeg; //centidegrees, ranges from [-18000,18000] 
+  double Angle_Traveled_cdeg; //centidegrees, ranges from -inf to inf.  This is not suitable for any type of trig functions
+  double P_Gain;
+  double I_Gain;
+  double D_Gain;
   
 } joint;
-joint Joints[4];
+joint Joints[3]; //Can only support 3 Joints, due to Arduino Mega only supporting 6 interrupts
 void run_veryfastrate_code(); //1000 Hz
 void run_fastrate_code(); //100 Hz
 void run_mediumrate_code(); //10 Hz
@@ -106,6 +112,13 @@ int shield_count = -1;
 //SERVOSHIELD
 void SERVOSHIELD_setServoPulse(uint8_t pin_number, uint16_t pulse_us);
 
+void Joint0_InputA();
+void Joint0_InputB();
+void Joint1_InputA();
+void Joint1_InputB();
+void Joint2_InputA();
+void Joint2_InputB();
+
 
 void scan_for_shields();
 void init_joints();
@@ -151,7 +164,6 @@ void setup() {
   wdt_reset();
   scan_for_shields();
   wdt_reset();
-  
   #if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
   {
     Serial1.println("Board Executing");
@@ -166,6 +178,9 @@ void init_joints()
 {
   int jointindex = 0;
   Joints[jointindex].id = jointindex+1;//Shoulder
+  Joints[jointindex].Level = INFO;
+  Joints[jointindex].State = JOINTSTATE_INITIALIZING;
+  Joints[jointindex].Available = 0;
   Joints[jointindex].Joint_Type = JOINTTYPE_REVOLUTE;
   Joints[jointindex].Pin_Output = -1;
   Joints[jointindex].LimitSwitchA_Type = PINMODE_DIGITAL_INPUT;
@@ -175,9 +190,25 @@ void init_joints()
   Joints[jointindex].PositionSensor_Type = PINMODE_QUADRATUREENCODER_INPUT;
   Joints[jointindex].Pin_PositionSensorA = -1;
   Joints[jointindex].Pin_PositionSensorB = -1;
+  Joints[jointindex].Current_Position_cdeg = 0.0f;
+  Joints[jointindex].Target_Position_cdeg = 0.0f;
+  Joints[jointindex].Rotation_Ratio = 0.0f;
   jointindex++;
-  
- 
+
+  for(int j = 0; j < 3; j++)
+  {
+     pinMode(Joints[j].Pin_Output, OUTPUT);  
+     pinMode(Joints[j].Pin_LimitSwitchA, INPUT); 
+     pinMode(Joints[j].Pin_LimitSwitchB, INPUT); 
+     pinMode(Joints[j].Pin_PositionSensorA, INPUT); 
+     pinMode(Joints[j].Pin_PositionSensorB, INPUT);   
+  }
+  attachInterrupt(digitalPinToInterrupt(Joints[0].Pin_PositionSensorA), Joint0_InputA, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(Joints[0].Pin_PositionSensorB), Joint0_InputB, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(Joints[1].Pin_PositionSensorA), Joint1_InputA, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(Joints[1].Pin_PositionSensorB), Joint1_InputB, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(Joints[2].Pin_PositionSensorA), Joint2_InputA, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(Joints[2].Pin_PositionSensorB), Joint2_InputB, CHANGE);
 }
 void scan_for_shields()
 {
@@ -483,7 +514,6 @@ void serialEvent()
       
     }
     message_complete = true;
-
   }
 }
 void SERVOSHIELD_setServoPulse(uint8_t n, uint16_t pulse_us)
@@ -500,4 +530,213 @@ void SERVOSHIELD_setServoPulse(uint8_t n, uint16_t pulse_us)
   
 }
 
+void Joint0_InputA()
+{
+  bool set_current_position = false;
+  if(Joints[0].State == JOINTSTATE_RUNNING) { set_current_position = true; }
+  // look for a low-to-high on channel A
+  if (digitalRead(Joints[0].Pin_PositionSensorA) == HIGH) 
+  { 
+  // check channel B to see which way encoder is turning
+    if (digitalRead(Joints[0].Pin_PositionSensorB) == LOW) //CW
+    {  
+      if(set_current_position == true) { Joints[0].Current_Position_cdeg += TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+      else { Joints[0].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[0].Current_Position_cdeg -= TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+      else { Joints[0].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+    }
+  }
+  else   // must be a high-to-low edge on channel A                                       
+  { 
+    // check channel B to see which way encoder is turning  
+    if (digitalRead(Joints[0].Pin_PositionSensorB) == HIGH) //CW
+    {   
+      if(set_current_position == true) { Joints[0].Current_Position_cdeg += TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+      else { Joints[0].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[0].Current_Position_cdeg -= TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+      else { Joints[0].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+    } 
+  }
+}
+void Joint0_InputB()
+{
+  bool set_current_position = false;
+  if(Joints[0].State == JOINTSTATE_RUNNING) { set_current_position = true; }
+  // look for a low-to-high on channel B
+  if (digitalRead(Joints[0].Pin_PositionSensorB) == HIGH) 
+  {   
+    // check channel A to see which way encoder is turning
+    if (digitalRead(Joints[0].Pin_PositionSensorA) == HIGH) //CW
+    {  
+      if(set_current_position == true) { Joints[0].Current_Position_cdeg += TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+      else { Joints[0].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[0].Current_Position_cdeg -= TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+      else { Joints[0].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+    }
+  }
+  // Look for a high-to-low on channel B
+  else 
+  { 
+    // check channel B to see which way encoder is turning  
+    if (digitalRead(Joints[0].Pin_PositionSensorA) == LOW) //CW
+    {   
+      if(set_current_position == true) { Joints[0].Current_Position_cdeg += TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+      else { Joints[0].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[0].Current_Position_cdeg -= TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+      else { Joints[0].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[0].Rotation_Ratio; }
+    }
+  }
+}
+
+void Joint1_InputA()
+{
+  bool set_current_position = false;
+  if(Joints[1].State == JOINTSTATE_RUNNING) { set_current_position = true; }
+  // look for a low-to-high on channel A
+  if (digitalRead(Joints[1].Pin_PositionSensorA) == HIGH) 
+  { 
+  // check channel B to see which way encoder is turning
+    if (digitalRead(Joints[1].Pin_PositionSensorB) == LOW) //CW
+    {  
+      if(set_current_position == true) { Joints[1].Current_Position_cdeg += TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+      else { Joints[1].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[1].Current_Position_cdeg -= TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+      else { Joints[1].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+    }
+  }
+  else   // must be a high-to-low edge on channel A                                       
+  { 
+    // check channel B to see which way encoder is turning  
+    if (digitalRead(Joints[1].Pin_PositionSensorB) == HIGH) //CW
+    {   
+      if(set_current_position == true) { Joints[1].Current_Position_cdeg += TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+      else { Joints[1].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[1].Current_Position_cdeg -= TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+      else { Joints[1].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+    } 
+  }
+}
+void Joint1_InputB()
+{
+  bool set_current_position = false;
+  if(Joints[1].State == JOINTSTATE_RUNNING) { set_current_position = true; }
+  // look for a low-to-high on channel B
+  if (digitalRead(Joints[1].Pin_PositionSensorB) == HIGH) 
+  {   
+    // check channel A to see which way encoder is turning
+    if (digitalRead(Joints[1].Pin_PositionSensorA) == HIGH) //CW
+    {  
+      if(set_current_position == true) { Joints[1].Current_Position_cdeg += TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+      else { Joints[1].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[1].Current_Position_cdeg -= TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+      else { Joints[1].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+    }
+  }
+  // Look for a high-to-low on channel B
+  else 
+  { 
+    // check channel B to see which way encoder is turning  
+    if (digitalRead(Joints[1].Pin_PositionSensorA) == LOW) //CW
+    {   
+      if(set_current_position == true) { Joints[1].Current_Position_cdeg += TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+      else { Joints[1].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[1].Current_Position_cdeg -= TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+      else { Joints[1].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[1].Rotation_Ratio; }
+    }
+  }
+}
+
+void Joint2_InputA()
+{
+  bool set_current_position = false;
+  if(Joints[2].State == JOINTSTATE_RUNNING) { set_current_position = true; }
+  // look for a low-to-high on channel A
+  if (digitalRead(Joints[2].Pin_PositionSensorA) == HIGH) 
+  { 
+  // check channel B to see which way encoder is turning
+    if (digitalRead(Joints[2].Pin_PositionSensorB) == LOW) //CW
+    {  
+      if(set_current_position == true) { Joints[2].Current_Position_cdeg += TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+      else { Joints[2].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[2].Current_Position_cdeg -= TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+      else { Joints[2].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+    }
+  }
+  else   // must be a high-to-low edge on channel A                                       
+  { 
+    // check channel B to see which way encoder is turning  
+    if (digitalRead(Joints[2].Pin_PositionSensorB) == HIGH) //CW
+    {   
+      if(set_current_position == true) { Joints[2].Current_Position_cdeg += TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+      else { Joints[2].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[2].Current_Position_cdeg -= TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+      else { Joints[2].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+    } 
+  }
+}
+void Joint2_InputB()
+{
+  bool set_current_position = false;
+  if(Joints[2].State == JOINTSTATE_RUNNING) { set_current_position = true; }
+  // look for a low-to-high on channel B
+  if (digitalRead(Joints[2].Pin_PositionSensorB) == HIGH) 
+  {   
+    // check channel A to see which way encoder is turning
+    if (digitalRead(Joints[2].Pin_PositionSensorA) == HIGH) //CW
+    {  
+      if(set_current_position == true) { Joints[2].Current_Position_cdeg += TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+      else { Joints[2].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[2].Current_Position_cdeg -= TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+      else { Joints[2].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+    }
+  }
+  // Look for a high-to-low on channel B
+  else 
+  { 
+    // check channel B to see which way encoder is turning  
+    if (digitalRead(Joints[2].Pin_PositionSensorA) == LOW) //CW
+    {   
+      if(set_current_position == true) { Joints[2].Current_Position_cdeg += TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+      else { Joints[2].Angle_Traveled_cdeg += TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+    } 
+    else //CCW
+    {
+      if(set_current_position == true) { Joints[2].Current_Position_cdeg -= TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+      else { Joints[2].Angle_Traveled_cdeg -= TICK_PER_CDEG*Joints[2].Rotation_Ratio; }
+    }
+  }
+}
 
