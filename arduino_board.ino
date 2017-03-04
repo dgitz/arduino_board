@@ -1,6 +1,6 @@
 #define FIRMWARE_MAJOR_VERSION 0
 #define FIRMWARE_MINOR_VERSION 2
-#define FIRMWARE_BUILD_NUMBER 1
+#define FIRMWARE_BUILD_NUMBER 2
 
 #include "Arduino.h"
 #include <SoftwareSerial.h>
@@ -62,7 +62,7 @@ Adafruit_PWMServoDriver pwm;
 
 int board_mode = BOARDMODE_BOOT;
 int node_mode = BOARDMODE_UNDEFINED;
-unsigned int armed_command = ARMEDCOMMAND_DISARM;
+unsigned int armed_command = ROVERCOMMAND_DISARM;
 unsigned int armed_state = ARMEDSTATUS_DISARMED_CANNOTARM;
 unsigned char recv_buffer[32];
 int available_i2c_devices[MAXNUMBER_SHIELDS*2];
@@ -318,7 +318,7 @@ void run_veryfastrate_code() //1000 Hz
   }
   else if(armed_state == ARMEDSTATUS_DISARMED) //Board Mode: RUNNING
   {
-    if(armed_command == ARMEDCOMMAND_ARM)
+    if(armed_command == ROVERCOMMAND_ARM)
     {
       armed_state = ARMEDSTATUS_ARMED;
     }
@@ -329,7 +329,7 @@ void run_veryfastrate_code() //1000 Hz
   }
   else if(armed_state == ARMEDSTATUS_ARMED)
   {
-    if(armed_command == ARMEDCOMMAND_DISARM)
+    if(armed_command == ROVERCOMMAND_DISARM)
     {
       armed_state = ARMEDSTATUS_DISARMED;
     }
