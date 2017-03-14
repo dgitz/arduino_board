@@ -2,6 +2,7 @@
 #define BOARD_ID 19
 #define BOARD_TYPE BOARDTYPE_ARDUINOUNO
 #define PRINT_DEBUG_LINES 0
+#define BYPASS_SHIELDCONFIG 1
 #define SHIELD1_TYPE SHIELDTYPE_LCDSHIELD
 #define SHIELD2_TYPE SHIELDTYPE_NONE
 #define SHIELD3_TYPE SHIELDTYPE_NONE
@@ -48,12 +49,6 @@
 
 //Debugging Defines
 #define PRINT_RECV_BUFFER 1
-
-
-
-
-
-
 
 typedef struct
 {
@@ -212,6 +207,7 @@ void setup() {
   #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
   {
     #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+      lcd.begin(16, 2); 
       lcd.clear();
     #endif
     softSerial.begin(115200);
@@ -224,7 +220,8 @@ void setup() {
     softSerial.println(FIRMWARE_BUILD_NUMBER,DEC);
 
     #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
-      lcd.print("BOOTED");
+      lcd.print("Booted");
+
     #endif
   }
   #endif
@@ -737,6 +734,7 @@ void run_fastrate_code() //100 Hz
             {
               board_mode = BOARDMODE_INITIALIZED;
             }
+            
           }
         }
       }
@@ -790,6 +788,10 @@ void run_slowrate_code() //1 Hz
     board_mode = BOARDMODE_RUNNING;
     armed_state = ARMEDSTATUS_DISARMED;
   }
+  if((BYPASS_SHIELDCONFIG == 1) && (board_mode == BOARDMODE_SHIELDS_CONFIGURED))
+  {
+    board_mode = BOARDMODE_RUNNING;
+  }
   if((board_mode == BOARDMODE_RUNNING) && (node_mode == BOARDMODE_INITIALIZING))
   {
     #if BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
@@ -797,9 +799,12 @@ void run_slowrate_code() //1 Hz
       Serial1.println("Arduino Board Rebooting.");
     }
     #endif
+    lcd.print("Rebooting");
+    
     delay(500);
     resetFunc();
   }
+  
   
   digitalWrite(LED,!digitalRead(LED));
   
@@ -1014,7 +1019,209 @@ void SERVOSHIELD_setServoPulse(uint8_t n, uint16_t pulse_us)
 #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
 void print_to_lcd(unsigned char System,unsigned char Subsystem,unsigned char Component,unsigned char DiagnosticType,unsigned char Level,unsigned char Message)
 {
-  
+  lcd.clear();
+  lcd.setCursor(0,0);
+  switch(Level)
+  {
+    case NOTICE:
+      lcd.print("NOTICE: ");
+      if((System == ROVER) && (Subsystem == ENTIRE_SYSTEM) && (DiagnosticType == NOERROR) && (Message == NOERROR))
+      {
+        lcd.setCursor(0,1);
+        lcd.print("Rover Is FMC.");
+      }
+      else
+      {
+        switch(Component)
+        {
+          case CONTROLLER_NODE:
+            lcd.print("Control");
+            break;
+          case DIAGNOSTIC_NODE:
+            lcd.print("Diag");
+            break;
+          case NAVIGATION_NODE:
+            lcd.print("Nav");
+            break;
+          case EVOLUTION_NODE:
+            lcd.print("Evol");
+            break;
+          case TARGETING_NODE:
+            lcd.print("Target");
+            break;
+          case TIMING_NODE:
+            lcd.print("Timing");
+            break;
+          case VISION_NODE:
+            lcd.print("Vision");
+            break;
+          case COMMUNICATION_NODE:
+            lcd.print("Comm");
+            break;
+          case DYNAMICS_NODE:
+            lcd.print("Dyn");
+            break;
+          case POWER_NODE:
+            lcd.print("Power");
+            break;
+          case POSE_NODE:
+            lcd.print("Pose");
+            break;
+          default:
+            lcd.print("?-");
+            lcd.print(Component);
+            break;
+        }
+        lcd.setCursor(0,1);
+        lcd.print(DiagnosticType);
+        lcd.print("-");
+        lcd.print(Message);
+      }
+      break;
+    case WARN:
+      lcd.print("WARN:");
+      switch(Component)
+      {
+        case CONTROLLER_NODE:
+          lcd.print("Control");
+          break;
+        case DIAGNOSTIC_NODE:
+          lcd.print("Diag");
+          break;
+        case NAVIGATION_NODE:
+          lcd.print("Nav");
+          break;
+        case EVOLUTION_NODE:
+          lcd.print("Evol");
+          break;
+        case TARGETING_NODE:
+          lcd.print("Target");
+          break;
+        case TIMING_NODE:
+          lcd.print("Timing");
+          break;
+        case VISION_NODE:
+          lcd.print("Vision");
+          break;
+        case COMMUNICATION_NODE:
+          lcd.print("Comm");
+          break;
+        case DYNAMICS_NODE:
+          lcd.print("Dyn");
+          break;
+        case POWER_NODE:
+          lcd.print("Power");
+          break;
+        case POSE_NODE:
+          lcd.print("Pose");
+          break;
+        default:
+          lcd.print("?-");
+          lcd.print(Component);
+          break;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(DiagnosticType);
+      lcd.print("-");
+      lcd.print(Message);
+      break;
+    case ERROR:
+      lcd.print("ERROR:");
+      switch(Component)
+      {
+        case CONTROLLER_NODE:
+          lcd.print("Control");
+          break;
+        case DIAGNOSTIC_NODE:
+          lcd.print("Diag");
+          break;
+        case NAVIGATION_NODE:
+          lcd.print("Nav");
+          break;
+        case EVOLUTION_NODE:
+          lcd.print("Evol");
+          break;
+        case TARGETING_NODE:
+          lcd.print("Target");
+          break;
+        case TIMING_NODE:
+          lcd.print("Timing");
+          break;
+        case VISION_NODE:
+          lcd.print("Vision");
+          break;
+        case COMMUNICATION_NODE:
+          lcd.print("Comm");
+          break;
+        case DYNAMICS_NODE:
+          lcd.print("Dyn");
+          break;
+        case POWER_NODE:
+          lcd.print("Power");
+          break;
+        case POSE_NODE:
+          lcd.print("Pose");
+          break;
+        default:
+          lcd.print("?-");
+          lcd.print(Component);
+          break;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(DiagnosticType);
+      lcd.print("-");
+      lcd.print(Message);
+      break;
+    case FATAL:
+      lcd.print("FATAL:");
+      switch(Component)
+      {
+        case CONTROLLER_NODE:
+          lcd.print("Control");
+          break;
+        case DIAGNOSTIC_NODE:
+          lcd.print("Diag");
+          break;
+        case NAVIGATION_NODE:
+          lcd.print("Nav");
+          break;
+        case EVOLUTION_NODE:
+          lcd.print("Evol");
+          break;
+        case TARGETING_NODE:
+          lcd.print("Target");
+          break;
+        case TIMING_NODE:
+          lcd.print("Timing");
+          break;
+        case VISION_NODE:
+          lcd.print("Vision");
+          break;
+        case COMMUNICATION_NODE:
+          lcd.print("Comm");
+          break;
+        case DYNAMICS_NODE:
+          lcd.print("Dyn");
+          break;
+        case POWER_NODE:
+          lcd.print("Power");
+          break;
+        case POSE_NODE:
+          lcd.print("Pose");
+          break;
+        default:
+          lcd.print("?-");
+          lcd.print(Component);
+          break;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(DiagnosticType);
+      lcd.print("-");
+      lcd.print(Message);
+      break;
+    default:
+      return;
+  }
 }
 #endif
 
