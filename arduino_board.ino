@@ -1,3 +1,14 @@
+//Configuration Defines
+#define BOARD_ID 19
+#define BOARD_TYPE BOARDTYPE_ARDUINOUNO
+#define PRINT_DEBUG_LINES 0
+#define SHIELD1_TYPE SHIELDTYPE_LCDSHIELD
+#define SHIELD2_TYPE SHIELDTYPE_NONE
+#define SHIELD3_TYPE SHIELDTYPE_NONE
+#define SHIELD4_TYPE SHIELDTYPE_NONE
+
+
+
 #define FIRMWARE_MAJOR_VERSION 0
 #define FIRMWARE_MINOR_VERSION 2
 #define FIRMWARE_BUILD_NUMBER 2
@@ -6,17 +17,11 @@
 #include <SoftwareSerial.h>
 #include "serialmessage.h"
 #include "Definitions.h"
-#include <Adafruit_PWMServoDriver.h>
+
 #include <Wire.h>
 #include <avr/wdt.h>
 
-//Debugging Defines
-#define PRINT_RECV_BUFFER 1
-#define PRINT_DEBUG_LINES 0
 
-
-#define BOARD_ID 17
-#define BOARD_TYPE BOARDTYPE_ARDUINOMEGA
 #define MAXNUMBER_SHIELDS 4
 #if BOARD_TYPE == BOARDTYPE_ARDUINOUNO
 #define MAXNUMBER_PORTS_PERSHIELD 2
@@ -26,11 +31,29 @@
 #define PORT_SIZE        8
 #define SERIAL_MESSAGE_SIZE 16 //Start Delimiter thru Checksum
 
-//Defines for Individual Shields
-//SERVOSHIELD
-#define SERVOSHIELD_UPDATE_RATE 50
-#define SERVOSHIELD_SERVO_MIN 224
-#define SERVOSHIELD_SERVO_MAX 480
+//Configuration defines for individual Shield Types
+
+#if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+  #include <LiquidCrystal.h>
+  #include <LCDKeypad.h>
+#endif
+
+#if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
+  #include <Adafruit_PWMServoDriver.h>
+
+  #define SERVOSHIELD_UPDATE_RATE 50
+  #define SERVOSHIELD_SERVO_MIN 224
+  #define SERVOSHIELD_SERVO_MAX 480
+#endif
+
+//Debugging Defines
+#define PRINT_RECV_BUFFER 1
+
+
+
+
+
+
 
 typedef struct
 {
@@ -56,9 +79,10 @@ void run_mediumrate_code(); //10 Hz
 void run_slowrate_code(); //1 Hz
 void run_veryslowrate_code(); //0.1 Hz
 
-int led = 13;
 
-Adafruit_PWMServoDriver pwm;
+#if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
+  Adafruit_PWMServoDriver pwm;
+#endif
 
 int board_mode = BOARDMODE_BOOT;
 int node_mode = BOARDMODE_UNDEFINED;
@@ -77,8 +101,14 @@ boolean message_complete = false;  // whether the string is complete
 bool new_message = false;
 SerialMessageHandler serialmessagehandler;
 
+//Board Definitions
 #if(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
-SoftwareSerial softSerial(2, 3); // RX, TX
+  #define LED 13
+  SoftwareSerial softSerial(2, 3); // RX, TX
+#endif
+
+#if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
+  #define LED 13
 #endif
 
 int veryfastrate_counter = 0;
@@ -102,14 +132,21 @@ unsigned long send_armcommand_counter = 0;
 unsigned long recv_armcommand_counter = 0;
 unsigned long time_since_last_rx = 0;
 
+LCDKeypad lcd;
+
 int temp_counter = 1000;
 bool reverse = false;
 int shield_count = -1;
 
 //Function Prototypes for individual shields
 //SERVOSHIELD
-void SERVOSHIELD_setServoPulse(uint8_t pin_number, uint16_t pulse_us);
+#if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
+  void SERVOSHIELD_setServoPulse(uint8_t pin_number, uint16_t pulse_us);
+#endif
 
+#if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+  void print_to_lcd(unsigned char System,unsigned char Subsystem,unsigned char Component,unsigned char DiagnosticType,unsigned char Level,unsigned char Message);
+#endif
 
 void scan_for_shields();
 void init_shields();
@@ -153,7 +190,7 @@ void setup() {
   wdt_disable();
   wdt_enable(WDTO_1S);
   memset(recv_buffer,0,sizeof(recv_buffer));
-  pinMode(led,OUTPUT);
+  pinMode(LED,OUTPUT);
   Serial.begin(115200);
   //Serial.setTimeout(1000);
   while(Serial.read() >= 0);
@@ -174,6 +211,9 @@ void setup() {
   }
   #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
   {
+    #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+      lcd.clear();
+    #endif
     softSerial.begin(115200);
     softSerial.println("ArduinoBoard Booting");
     softSerial.print("FW Major Version: ");
@@ -182,6 +222,10 @@ void setup() {
     softSerial.println(FIRMWARE_MINOR_VERSION,DEC);
     softSerial.print("FW Build Number: ");
     softSerial.println(FIRMWARE_BUILD_NUMBER,DEC);
+
+    #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+      lcd.print("BOOTED");
+    #endif
   }
   #endif
   delay(500);
@@ -348,6 +392,7 @@ void run_fastrate_code() //100 Hz
       {
         for(int j = 0; j < PORT_SIZE;j++)
         {
+          #if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
           if(shields[s].ports[p].Pin_Mode[j] == PINMODE_PWM_OUTPUT)
           {
             if(armed_state == ARMEDSTATUS_ARMED)
@@ -373,6 +418,7 @@ void run_fastrate_code() //100 Hz
             }
             
           }
+          #endif
           if(shields[s].ports[p].Pin_Mode[j] == PINMODE_DIGITAL_OUTPUT_NON_ACTUATOR)
           {
               if(shields[s].type == SHIELDTYPE_RELAYSHIELD)
@@ -447,6 +493,7 @@ void run_fastrate_code() //100 Hz
             add_new_shield = false;
             bool device_available = false;
             bool matched = false;
+            #if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
             if((ShieldID > 0) &&
                (ShieldType == SHIELDTYPE_SERVOSHIELD)) //Need to see if device is I2C that is available
             {
@@ -462,6 +509,7 @@ void run_fastrate_code() //100 Hz
                 }
               }
             }
+            #endif
             if(matched == true)
             {
               
@@ -475,6 +523,18 @@ void run_fastrate_code() //100 Hz
             shields[i].portcount = PortCount;
           }
           
+        }
+      }
+      else if (message_type == SERIAL_Diagnostic_ID)
+      {
+        //int decode_DiagnosticSerial(unsigned char* inpacket,unsigned char* System,unsigned char* SubSystem,unsigned char* Component,unsigned char* Diagnostic_Type,unsigned char* Level,unsigned char* Diagnostic_Message);
+        unsigned char System, Subsystem,Component,DiagnosticType,Level,Message;
+        int status = serialmessagehandler.decode_DiagnosticSerial(packet,&System,&Subsystem,&Component,&DiagnosticType,&Level,&Message);
+        if(status == 1)
+        {
+          #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+            print_to_lcd(System,Subsystem,Component,DiagnosticType,Level,Message);
+          #endif
         }
       }
       else if(message_type == SERIAL_Set_DIO_Port_ID)
@@ -741,7 +801,7 @@ void run_slowrate_code() //1 Hz
     resetFunc();
   }
   
-  digitalWrite(led,!digitalRead(led));
+  digitalWrite(LED,!digitalRead(LED));
   
 }
 void run_veryslowrate_code() //0.1 Hz
@@ -749,137 +809,141 @@ void run_veryslowrate_code() //0.1 Hz
   
   #if BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
   {
-    Serial1.print("Passed Checksum: ");
-    Serial1.print(passed_checksum_counter,DEC);
-    Serial1.print(" Failed Checksum: ");
-    Serial1.println(failed_checksum_counter,DEC);
-    
-    Serial1.print("Sent Mode (0xAB17) times: ");
-    Serial1.print(send_mode_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)send_mode_counter/(double)loop_counter);
-    Serial1.print(" (Hz) Received times: ");
-    Serial1.print(recv_mode_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)recv_mode_counter/(double)loop_counter);
-    Serial1.println(" (Hz)");
-    
-    Serial1.print("Sent Shield Configure (0xAB33) times: ");
-    Serial1.print(send_configure_shield_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)send_configure_shield_counter/(double)loop_counter);
-    Serial1.print(" (Hz) Received times: ");
-    Serial1.print(recv_configure_shield_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)recv_configure_shield_counter/(double)loop_counter);
-    Serial1.println(" (Hz)");
-    
-    Serial1.print("Send DIO Configure (0xAB16) times: ");
-    Serial1.print(send_configure_dio_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)send_configure_dio_counter/(double)loop_counter);
-    Serial1.print(" (Hz) Received times: ");
-    Serial1.print(recv_configure_dio_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)recv_configure_dio_counter/(double)loop_counter);
-    Serial1.println(" (Hz)");
-    
-    Serial1.print("Send Set DIO (0xAB18) times: ");
-    Serial1.print(send_set_dio_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)send_set_dio_counter/(double)loop_counter);
-    Serial1.print(" (Hz) Received times: ");
-    Serial1.print(recv_set_dio_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)recv_set_dio_counter/(double)loop_counter);
-    Serial1.println(" (Hz)");
-    
-    Serial1.print("Send Set DIO DefaultValue (0xAB32) times: ");
-    Serial1.print(send_set_dio_defaultvalue_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)send_set_dio_defaultvalue_counter/(double)loop_counter);
-    Serial1.print(" (Hz) Received times: ");
-    Serial1.print(recv_set_dio_defaultvalue_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)recv_set_dio_defaultvalue_counter/(double)loop_counter);
-    Serial1.println(" (Hz)");
-    
-    Serial1.print("Send ArmCommand (0xAB27) times: ");
-    Serial1.print(send_armcommand_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)send_armcommand_counter/(double)loop_counter);
-    Serial1.print(" (Hz) Received times: ");
-    Serial1.print(recv_armcommand_counter,DEC);
-    Serial1.print(" at: ");
-    Serial1.print(1000.0*(double)recv_armcommand_counter/(double)loop_counter);
-    Serial1.println(" (Hz)");   
+    #if PRINT_DEBUG_LINES == 1
+      Serial1.print("Passed Checksum: ");
+      Serial1.print(passed_checksum_counter,DEC);
+      Serial1.print(" Failed Checksum: ");
+      Serial1.println(failed_checksum_counter,DEC);
+      
+      Serial1.print("Sent Mode (0xAB17) times: ");
+      Serial1.print(send_mode_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)send_mode_counter/(double)loop_counter);
+      Serial1.print(" (Hz) Received times: ");
+      Serial1.print(recv_mode_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)recv_mode_counter/(double)loop_counter);
+      Serial1.println(" (Hz)");
+      
+      Serial1.print("Sent Shield Configure (0xAB33) times: ");
+      Serial1.print(send_configure_shield_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)send_configure_shield_counter/(double)loop_counter);
+      Serial1.print(" (Hz) Received times: ");
+      Serial1.print(recv_configure_shield_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)recv_configure_shield_counter/(double)loop_counter);
+      Serial1.println(" (Hz)");
+      
+      Serial1.print("Send DIO Configure (0xAB16) times: ");
+      Serial1.print(send_configure_dio_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)send_configure_dio_counter/(double)loop_counter);
+      Serial1.print(" (Hz) Received times: ");
+      Serial1.print(recv_configure_dio_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)recv_configure_dio_counter/(double)loop_counter);
+      Serial1.println(" (Hz)");
+      
+      Serial1.print("Send Set DIO (0xAB18) times: ");
+      Serial1.print(send_set_dio_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)send_set_dio_counter/(double)loop_counter);
+      Serial1.print(" (Hz) Received times: ");
+      Serial1.print(recv_set_dio_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)recv_set_dio_counter/(double)loop_counter);
+      Serial1.println(" (Hz)");
+      
+      Serial1.print("Send Set DIO DefaultValue (0xAB32) times: ");
+      Serial1.print(send_set_dio_defaultvalue_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)send_set_dio_defaultvalue_counter/(double)loop_counter);
+      Serial1.print(" (Hz) Received times: ");
+      Serial1.print(recv_set_dio_defaultvalue_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)recv_set_dio_defaultvalue_counter/(double)loop_counter);
+      Serial1.println(" (Hz)");
+      
+      Serial1.print("Send ArmCommand (0xAB27) times: ");
+      Serial1.print(send_armcommand_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)send_armcommand_counter/(double)loop_counter);
+      Serial1.print(" (Hz) Received times: ");
+      Serial1.print(recv_armcommand_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)recv_armcommand_counter/(double)loop_counter);
+      Serial1.println(" (Hz)");
+    #endif
   }
   #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
   {
-    softSerial.print("Passed Checksum: ");
-    softSerial.print(passed_checksum_counter,DEC);
-    softSerial.print(" Failed Checksum: ");
-    softSerial.println(failed_checksum_counter,DEC);
-    
-    softSerial.print("Sent Mode (0xAB17) times: ");
-    softSerial.print(send_mode_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)send_mode_counter/(double)loop_counter);
-    softSerial.print(" (Hz) Received times: ");
-    softSerial.print(recv_mode_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)recv_mode_counter/(double)loop_counter);
-    softSerial.println(" (Hz)");
-    
-    softSerial.print("Sent Shield Configure (0xAB33) times: ");
-    softSerial.print(send_configure_shield_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)send_configure_shield_counter/(double)loop_counter);
-    softSerial.print(" (Hz) Received times: ");
-    softSerial.print(recv_configure_shield_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)recv_configure_shield_counter/(double)loop_counter);
-    softSerial.println(" (Hz)");
-    
-    softSerial.print("Send DIO Configure (0xAB16) times: ");
-    softSerial.print(send_configure_dio_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)send_configure_dio_counter/(double)loop_counter);
-    softSerial.print(" (Hz) Received times: ");
-    softSerial.print(recv_configure_dio_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)recv_configure_dio_counter/(double)loop_counter);
-    softSerial.println(" (Hz)");
-    
-    softSerial.print("Send Set DIO (0xAB18) times: ");
-    softSerial.print(send_set_dio_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)send_set_dio_counter/(double)loop_counter);
-    softSerial.print(" (Hz) Received times: ");
-    softSerial.print(recv_set_dio_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)recv_set_dio_counter/(double)loop_counter);
-    softSerial.println(" (Hz)");
-    
-    softSerial.print("Send Set DIO DefaultValue (0xAB32) times: ");
-    softSerial.print(send_set_dio_defaultvalue_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)send_set_dio_defaultvalue_counter/(double)loop_counter);
-    softSerial.print(" (Hz) Received times: ");
-    softSerial.print(recv_set_dio_defaultvalue_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)recv_set_dio_defaultvalue_counter/(double)loop_counter);
-    softSerial.println(" (Hz)");
-    
-    softSerial.print("Send ArmCommand (0xAB27) times: ");
-    softSerial.print(send_armcommand_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)send_armcommand_counter/(double)loop_counter);
-    softSerial.print(" (Hz) Received times: ");
-    softSerial.print(recv_armcommand_counter,DEC);
-    softSerial.print(" at: ");
-    softSerial.print(1000.0*(double)recv_armcommand_counter/(double)loop_counter);
-    softSerial.println(" (Hz)");   
+    #if PRINT_DEBUG_LINES == 1
+      softSerial.print("Passed Checksum: ");
+      softSerial.print(passed_checksum_counter,DEC);
+      softSerial.print(" Failed Checksum: ");
+      softSerial.println(failed_checksum_counter,DEC);
+      
+      softSerial.print("Sent Mode (0xAB17) times: ");
+      softSerial.print(send_mode_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)send_mode_counter/(double)loop_counter);
+      softSerial.print(" (Hz) Received times: ");
+      softSerial.print(recv_mode_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)recv_mode_counter/(double)loop_counter);
+      softSerial.println(" (Hz)");
+      
+      softSerial.print("Sent Shield Configure (0xAB33) times: ");
+      softSerial.print(send_configure_shield_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)send_configure_shield_counter/(double)loop_counter);
+      softSerial.print(" (Hz) Received times: ");
+      softSerial.print(recv_configure_shield_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)recv_configure_shield_counter/(double)loop_counter);
+      softSerial.println(" (Hz)");
+      
+      softSerial.print("Send DIO Configure (0xAB16) times: ");
+      softSerial.print(send_configure_dio_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)send_configure_dio_counter/(double)loop_counter);
+      softSerial.print(" (Hz) Received times: ");
+      softSerial.print(recv_configure_dio_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)recv_configure_dio_counter/(double)loop_counter);
+      softSerial.println(" (Hz)");
+      
+      softSerial.print("Send Set DIO (0xAB18) times: ");
+      softSerial.print(send_set_dio_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)send_set_dio_counter/(double)loop_counter);
+      softSerial.print(" (Hz) Received times: ");
+      softSerial.print(recv_set_dio_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)recv_set_dio_counter/(double)loop_counter);
+      softSerial.println(" (Hz)");
+      
+      softSerial.print("Send Set DIO DefaultValue (0xAB32) times: ");
+      softSerial.print(send_set_dio_defaultvalue_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)send_set_dio_defaultvalue_counter/(double)loop_counter);
+      softSerial.print(" (Hz) Received times: ");
+      softSerial.print(recv_set_dio_defaultvalue_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)recv_set_dio_defaultvalue_counter/(double)loop_counter);
+      softSerial.println(" (Hz)");
+      
+      softSerial.print("Send ArmCommand (0xAB27) times: ");
+      softSerial.print(send_armcommand_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)send_armcommand_counter/(double)loop_counter);
+      softSerial.print(" (Hz) Received times: ");
+      softSerial.print(recv_armcommand_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)recv_armcommand_counter/(double)loop_counter);
+      softSerial.println(" (Hz)");   
+    #endif
   }
   #endif
   
@@ -932,6 +996,7 @@ void serialEvent()
 
   }
 }
+#if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
 void SERVOSHIELD_setServoPulse(uint8_t n, uint16_t pulse_us)
 {
   double pulse = (double)(pulse_us)/1000.0;
@@ -943,7 +1008,14 @@ void SERVOSHIELD_setServoPulse(uint8_t n, uint16_t pulse_us)
   pulse *= 1000;
   pulse /= pulselength;
   pwm.setPWM(n, 0, pulse);
+}
+#endif
+
+#if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+void print_to_lcd(unsigned char System,unsigned char Subsystem,unsigned char Component,unsigned char DiagnosticType,unsigned char Level,unsigned char Message)
+{
   
 }
+#endif
 
 
