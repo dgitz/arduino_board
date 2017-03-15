@@ -12,7 +12,7 @@
 
 #define FIRMWARE_MAJOR_VERSION 0
 #define FIRMWARE_MINOR_VERSION 3
-#define FIRMWARE_BUILD_NUMBER 0
+#define FIRMWARE_BUILD_NUMBER 1
 
 #include "Arduino.h"
 #include <SoftwareSerial.h>
@@ -1162,8 +1162,6 @@ void print_to_lcd(unsigned char System,unsigned char Subsystem,unsigned char Com
         }
         else
         {
-          lcd.print(map_level_tostring(Level));
-          lcd.print(": ");
           lcd.print(map_component_tostring(Component));
           lcd.setCursor(0,1);
           lcd.print(map_diagnostictype_tostring(DiagnosticType));
