@@ -11,8 +11,8 @@
 
 
 #define FIRMWARE_MAJOR_VERSION 0
-#define FIRMWARE_MINOR_VERSION 2
-#define FIRMWARE_BUILD_NUMBER 2
+#define FIRMWARE_MINOR_VERSION 3
+#define FIRMWARE_BUILD_NUMBER 0
 
 #include "Arduino.h"
 #include <SoftwareSerial.h>
@@ -37,6 +37,13 @@
 #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
   #include <LiquidCrystal.h>
   #include <LCDKeypad.h>
+  #define BUTTON_RIGHT 0
+  #define BUTTON_UP 1
+  #define BUTTON_DOWN 2
+  #define BUTTON_LEFT 3
+  #define BUTTON_SELECT 4
+  #define BUTTON_NONE 5
+  
 #endif
 
 #if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
@@ -126,8 +133,15 @@ unsigned long recv_set_dio_defaultvalue_counter = 0;
 unsigned long send_armcommand_counter = 0;
 unsigned long recv_armcommand_counter = 0;
 unsigned long time_since_last_rx = 0;
+unsigned long level_debug_counter = 0;
+unsigned long level_info_counter = 0;
+unsigned long level_notice_counter = 0;
+unsigned long level_warn_counter = 0;
+unsigned long level_error_counter = 0;
+unsigned long level_fatal_counter = 0;
+int comm_established_once = 0;
 
-LCDKeypad lcd;
+
 
 int temp_counter = 1000;
 bool reverse = false;
@@ -139,12 +153,26 @@ int shield_count = -1;
   void SERVOSHIELD_setServoPulse(uint8_t pin_number, uint16_t pulse_us);
 #endif
 
+//LCDSHIELD
 #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+  LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
   void print_to_lcd(unsigned char System,unsigned char Subsystem,unsigned char Component,unsigned char DiagnosticType,unsigned char Level,unsigned char Message);
+  void update_lcd();
+  int read_lcd_buttons();
+  int lcd_button_pressed;
+  int level_selected = NOTICE;
+  #define MENUPAGE_DEFAULT 0
+  #define MENUPAGE_LEVELCOUNT 1
+  int current_menupage = MENUPAGE_DEFAULT;
 #endif
 
 void scan_for_shields();
 void init_shields();
+String map_level_tostring(int v);
+String map_component_tostring(int v);
+String map_diagnostictype_tostring(int v);
+String map_message_tostring(int v);
+
 void(*resetFunc)(void) = 0;
 void init_shields()
 {
@@ -220,8 +248,9 @@ void setup() {
     softSerial.println(FIRMWARE_BUILD_NUMBER,DEC);
 
     #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+    {
       lcd.print("Booted");
-
+    }
     #endif
   }
   #endif
@@ -445,6 +474,7 @@ void run_fastrate_code() //100 Hz
     }
     if(message_checksum == computed_checksum)
     {
+      comm_established_once = 1;
       time_since_last_rx = 0;
       message_type = recv_buffer[1];
       passed_checksum_counter++;
@@ -530,7 +560,15 @@ void run_fastrate_code() //100 Hz
         if(status == 1)
         {
           #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+          {
+            if(Level == DEBUG) { level_debug_counter++;  }
+            else if(Level == INFO)  { level_info_counter++;  }
+            else if(Level == NOTICE) { level_notice_counter++;  }
+            else if(Level == WARN)  { level_warn_counter++; }
+            else if(Level == ERROR) { level_error_counter++; }
+            else if(Level == FATAL) { level_fatal_counter++; }
             print_to_lcd(System,Subsystem,Component,DiagnosticType,Level,Message);
+          }
           #endif
         }
       }
@@ -750,6 +788,32 @@ void run_fastrate_code() //100 Hz
 }
 void run_mediumrate_code() //10 Hz
 {
+  #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+  {
+    int key = read_lcd_buttons();
+    switch (key)
+    {
+      case BUTTON_SELECT:
+        current_menupage = MENUPAGE_LEVELCOUNT;
+        break;
+      case BUTTON_LEFT:
+        current_menupage = MENUPAGE_DEFAULT;
+        break;
+      case BUTTON_UP:
+        if(current_menupage == MENUPAGE_LEVELCOUNT)
+        {
+          if(level_selected > DEBUG) { level_selected--; }
+        }
+        break;
+      case BUTTON_DOWN:
+        if(current_menupage == MENUPAGE_LEVELCOUNT)
+        {
+          if(level_selected < FATAL) { level_selected++;}
+        }
+        
+    }
+  }
+  #endif
   //Serial1.println(board_mode,DEC);
   {
     char buffer[16];
@@ -779,6 +843,11 @@ void run_mediumrate_code() //10 Hz
 }
 void run_slowrate_code() //1 Hz
 {
+  #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+  {
+      update_lcd();
+  }
+  #endif
   if(board_mode == BOARDMODE_BOOT)
   {
     board_mode = BOARDMODE_INITIALIZING;
@@ -803,6 +872,28 @@ void run_slowrate_code() //1 Hz
     
     delay(500);
     resetFunc();
+  }
+  if(time_since_last_rx > 200)
+  {
+    #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+    {
+      
+      if(current_menupage == MENUPAGE_DEFAULT)
+      {
+        lcd.clear();
+        lcd.setCursor(0,0);
+        if(comm_established_once == 0)
+        {
+          lcd.print("ERROR: No Comm");
+        }
+        else
+        {
+          lcd.print("ERROR: Comm Lost");
+        }
+      }
+      
+    }
+    #endif
   }
   
   
@@ -1017,212 +1108,257 @@ void SERVOSHIELD_setServoPulse(uint8_t n, uint16_t pulse_us)
 #endif
 
 #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
-void print_to_lcd(unsigned char System,unsigned char Subsystem,unsigned char Component,unsigned char DiagnosticType,unsigned char Level,unsigned char Message)
+void update_lcd()
 {
-  lcd.clear();
-  lcd.setCursor(0,0);
-  switch(Level)
-  {
-    case NOTICE:
-      lcd.print("NOTICE: ");
-      if((System == ROVER) && (Subsystem == ENTIRE_SYSTEM) && (DiagnosticType == NOERROR) && (Message == NOERROR))
-      {
-        lcd.setCursor(0,1);
-        lcd.print("Rover Is FMC.");
-      }
-      else
-      {
-        switch(Component)
-        {
-          case CONTROLLER_NODE:
-            lcd.print("Control");
-            break;
-          case DIAGNOSTIC_NODE:
-            lcd.print("Diag");
-            break;
-          case NAVIGATION_NODE:
-            lcd.print("Nav");
-            break;
-          case EVOLUTION_NODE:
-            lcd.print("Evol");
-            break;
-          case TARGETING_NODE:
-            lcd.print("Target");
-            break;
-          case TIMING_NODE:
-            lcd.print("Timing");
-            break;
-          case VISION_NODE:
-            lcd.print("Vision");
-            break;
-          case COMMUNICATION_NODE:
-            lcd.print("Comm");
-            break;
-          case DYNAMICS_NODE:
-            lcd.print("Dyn");
-            break;
-          case POWER_NODE:
-            lcd.print("Power");
-            break;
-          case POSE_NODE:
-            lcd.print("Pose");
-            break;
-          default:
-            lcd.print("?-");
-            lcd.print(Component);
-            break;
-        }
-        lcd.setCursor(0,1);
-        lcd.print(DiagnosticType);
-        lcd.print("-");
-        lcd.print(Message);
-      }
-      break;
-    case WARN:
-      lcd.print("WARN:");
-      switch(Component)
-      {
-        case CONTROLLER_NODE:
-          lcd.print("Control");
-          break;
-        case DIAGNOSTIC_NODE:
-          lcd.print("Diag");
-          break;
-        case NAVIGATION_NODE:
-          lcd.print("Nav");
-          break;
-        case EVOLUTION_NODE:
-          lcd.print("Evol");
-          break;
-        case TARGETING_NODE:
-          lcd.print("Target");
-          break;
-        case TIMING_NODE:
-          lcd.print("Timing");
-          break;
-        case VISION_NODE:
-          lcd.print("Vision");
-          break;
-        case COMMUNICATION_NODE:
-          lcd.print("Comm");
-          break;
-        case DYNAMICS_NODE:
-          lcd.print("Dyn");
-          break;
-        case POWER_NODE:
-          lcd.print("Power");
-          break;
-        case POSE_NODE:
-          lcd.print("Pose");
-          break;
-        default:
-          lcd.print("?-");
-          lcd.print(Component);
-          break;
-      }
-      lcd.setCursor(0,1);
-      lcd.print(DiagnosticType);
-      lcd.print("-");
-      lcd.print(Message);
-      break;
-    case ERROR:
-      lcd.print("ERROR:");
-      switch(Component)
-      {
-        case CONTROLLER_NODE:
-          lcd.print("Control");
-          break;
-        case DIAGNOSTIC_NODE:
-          lcd.print("Diag");
-          break;
-        case NAVIGATION_NODE:
-          lcd.print("Nav");
-          break;
-        case EVOLUTION_NODE:
-          lcd.print("Evol");
-          break;
-        case TARGETING_NODE:
-          lcd.print("Target");
-          break;
-        case TIMING_NODE:
-          lcd.print("Timing");
-          break;
-        case VISION_NODE:
-          lcd.print("Vision");
-          break;
-        case COMMUNICATION_NODE:
-          lcd.print("Comm");
-          break;
-        case DYNAMICS_NODE:
-          lcd.print("Dyn");
-          break;
-        case POWER_NODE:
-          lcd.print("Power");
-          break;
-        case POSE_NODE:
-          lcd.print("Pose");
-          break;
-        default:
-          lcd.print("?-");
-          lcd.print(Component);
-          break;
-      }
-      lcd.setCursor(0,1);
-      lcd.print(DiagnosticType);
-      lcd.print("-");
-      lcd.print(Message);
-      break;
-    case FATAL:
-      lcd.print("FATAL:");
-      switch(Component)
-      {
-        case CONTROLLER_NODE:
-          lcd.print("Control");
-          break;
-        case DIAGNOSTIC_NODE:
-          lcd.print("Diag");
-          break;
-        case NAVIGATION_NODE:
-          lcd.print("Nav");
-          break;
-        case EVOLUTION_NODE:
-          lcd.print("Evol");
-          break;
-        case TARGETING_NODE:
-          lcd.print("Target");
-          break;
-        case TIMING_NODE:
-          lcd.print("Timing");
-          break;
-        case VISION_NODE:
-          lcd.print("Vision");
-          break;
-        case COMMUNICATION_NODE:
-          lcd.print("Comm");
-          break;
-        case DYNAMICS_NODE:
-          lcd.print("Dyn");
-          break;
-        case POWER_NODE:
-          lcd.print("Power");
-          break;
-        case POSE_NODE:
-          lcd.print("Pose");
-          break;
-        default:
-          lcd.print("?-");
-          lcd.print(Component);
-          break;
-      }
-      lcd.setCursor(0,1);
-      lcd.print(DiagnosticType);
-      lcd.print("-");
-      lcd.print(Message);
-      break;
-    default:
-      return;
+  //softSerial.println(level_selected,DEC);
+  if(current_menupage == MENUPAGE_LEVELCOUNT)
+    {
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print(map_level_tostring(level_selected));
+    lcd.print(": ");
+    switch(level_selected)
+    {
+      case DEBUG:
+        lcd.print(level_debug_counter);
+        break;
+      case INFO:
+        lcd.print(level_info_counter);
+        break;
+      case NOTICE:
+        lcd.print(level_notice_counter);
+        break;
+      case WARN:
+        lcd.print(level_warn_counter);
+        break;
+      case ERROR:
+        lcd.print(level_error_counter);
+        break;
+      case FATAL:
+        lcd.print(level_fatal_counter);
+        break;
+      default:
+        lcd.print("?");
+        lcd.print(level_selected);
+        break;
+    }
   }
 }
+void print_to_lcd(unsigned char System,unsigned char Subsystem,unsigned char Component,unsigned char DiagnosticType,unsigned char Level,unsigned char Message)
+{
+  if(current_menupage == MENUPAGE_DEFAULT)
+  {
+    lcd.clear();
+    lcd.setCursor(0,0);
+    switch(Level)
+    {
+      case NOTICE:
+        lcd.print(map_level_tostring(Level));
+        lcd.print(":");
+        if((System == ROVER) && (Subsystem == ENTIRE_SYSTEM) && (DiagnosticType == NOERROR) && (Message == NOERROR))
+        {
+          lcd.setCursor(0,1);
+          lcd.print("Rover Is FMC.");
+        }
+        else
+        {
+          lcd.print(map_level_tostring(Level));
+          lcd.print(": ");
+          lcd.print(map_component_tostring(Component));
+          lcd.setCursor(0,1);
+          lcd.print(map_diagnostictype_tostring(DiagnosticType));
+          lcd.print(":");
+          lcd.print(map_message_tostring(Message));
+        }
+        break;
+      default:
+        lcd.print(map_level_tostring(Level));
+        lcd.print(": ");
+        lcd.print(map_component_tostring(Component));
+        lcd.setCursor(0,1);
+        lcd.print(map_diagnostictype_tostring(DiagnosticType));
+        lcd.print(":");
+        lcd.print(map_message_tostring(Message));
+        return;
+    }
+  }
+}
+int read_lcd_buttons()
+{
+  int adc_key_in = analogRead(0);      // read the value from the sensor
+   // my buttons when read are centered at these valies: 0, 144, 329, 504, 741
+   // we add approx 50 to those values and check to see if we are close
+   if (adc_key_in > 1000) return BUTTON_NONE; // We make this the 1st option for speed reasons since it will be the most likely result
+   if (adc_key_in < 50)   return BUTTON_RIGHT; 
+   if (adc_key_in < 195)  return BUTTON_UP;
+   if (adc_key_in < 380)  return BUTTON_DOWN;
+   if (adc_key_in < 555)  return BUTTON_LEFT;
+   if (adc_key_in < 790)  return BUTTON_SELECT;  
+   return BUTTON_NONE;  // when all others fail, return this...
+}
 #endif
-
+String map_component_tostring(int v)
+{
+  switch(v)
+  {
+    case CONTROLLER_NODE:
+      return "Control";
+      break;
+    case DIAGNOSTIC_NODE:
+      return "Diag";
+      break;
+    case NAVIGATION_NODE:
+      return "Nav";
+      break;
+    case EVOLUTION_NODE:
+      return "Evol";
+      break;
+    case TARGETING_NODE:
+      return "Target";
+      break;
+    case TIMING_NODE:
+      return "Timing";
+      break;
+    case VISION_NODE:
+      return "Vision";
+      break;
+    case COMMUNICATION_NODE:
+      return "Comm";
+      break;
+    case DYNAMICS_NODE:
+      return "Dyn";
+      break;
+    case POWER_NODE:
+      return "Power";
+      break;
+    case POSE_NODE:
+      return "Pose";
+      break;
+    default:
+      return "UNK";
+      break;
+  }
+}
+String map_level_tostring(int v)
+{
+  switch(v)
+  {
+    case DEBUG:
+      return "DEBUG";
+      break;
+    case INFO:
+      return "INFO";
+      break;
+    case NOTICE:
+      return "NOTICE";
+      break;
+    case WARN:
+      return "WARN";
+      break;
+    case ERROR:
+      return "ERROR";
+      break;
+    case FATAL:
+      return "FATAL";
+      break;
+    default:
+      return "UNKNOWN";
+  }
+}
+String map_diagnostictype_tostring(int v)
+{
+  switch(v)
+  {
+    case NOERROR:
+      return "NOERROR";
+      break;
+    case ELECTRICAL:
+      return "ELEC";
+      break;
+    case SOFTWARE:
+      return "SFTWR";
+      break;
+    case COMMUNICATIONS:
+      return "COMM";
+      break;
+    case SENSORS:
+      return "SNSRS";
+      break;
+    case ACTUATORS:
+      return "ACTRS";
+      break;
+    case DATA_STORAGE:
+      return "STRGE";
+      break;
+    case REMOTE_CONTROL:
+      return "RC";
+      break;
+    case TARGET_ACQUISITION:
+      return "TGTACQ";
+      break;
+    case POWER:
+      return "PWR";
+      break;
+    case POSE:
+      return "POSE";
+      break;
+    case GENERAL_ERROR:
+      return "GEN";
+      break;
+    default:
+      return "UNK";
+      break;
+  }
+}
+String map_message_tostring(int v)
+{
+  switch(v)
+  {
+    case NOERROR:
+      return "NOERROR";
+      break;
+    case INITIALIZING:
+      return "Init";
+      break;
+    case INITIALIZING_ERROR:
+      return "Init Error";
+      break;
+    case DROPPING_PACKETS:
+      return "Drop Pkt";
+      break;
+    case MISSING_HEARTBEATS:
+      return "Msng Hrtbt";
+      break;
+    case DEVICE_NOT_AVAILABLE:
+      return "Device N/A";
+      break;
+    case ROVER_ARMED:
+      return "Armed";
+      break;
+    case ROVER_DISARMED:
+      return "Disarmed";
+      break;
+    case TEMPERATURE_HIGH:
+      return "Temp High";
+      break;
+    case TEMPERATURE_LOW:
+      return "Temp Low";
+      break;
+    case DIAGNOSTIC_PASSED:
+      return "Diag Ok";
+      break;
+    case DIAGNOSTIC_FAILED:
+      return "Diag Bad";
+      break;
+    case RESOURCE_LEAK:
+      return "Res Leak";
+      break;
+    case HIGH_RESOURCE_USAGE:
+      return "High Res Usg";
+      break;
+    default:
+      return "Unknown";
+      break;
+  }
+}
 
