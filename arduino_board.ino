@@ -793,7 +793,7 @@ void run_mediumrate_code() //10 Hz
     int key = read_lcd_buttons();
     switch (key)
     {
-      case BUTTON_SELECT:
+      case BUTTON_RIGHT:
         current_menupage = MENUPAGE_LEVELCOUNT;
         break;
       case BUTTON_LEFT:
