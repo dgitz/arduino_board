@@ -1,9 +1,9 @@
 //Configuration Defines
-#define BOARD_ID 19
+#define BOARD_ID 18
 #define BOARD_TYPE BOARDTYPE_ARDUINOUNO
-#define PRINT_DEBUG_LINES 0
-#define BYPASS_SHIELDCONFIG 1
-#define SHIELD1_TYPE SHIELDTYPE_LCDSHIELD
+#define PRINT_DEBUG_LINES 1
+#define BYPASS_SHIELDCONFIG 0
+#define SHIELD1_TYPE SHIELDTYPE_NONE
 #define SHIELD2_TYPE SHIELDTYPE_NONE
 #define SHIELD3_TYPE SHIELDTYPE_NONE
 #define SHIELD4_TYPE SHIELDTYPE_NONE
@@ -132,6 +132,8 @@ unsigned long send_set_dio_defaultvalue_counter = 0;
 unsigned long recv_set_dio_defaultvalue_counter = 0;
 unsigned long send_armcommand_counter = 0;
 unsigned long recv_armcommand_counter = 0;
+unsigned long send_pps_counter = 0;
+unsigned long recv_pps_counter = 0;
 unsigned long time_since_last_rx = 0;
 unsigned long level_debug_counter = 0;
 unsigned long level_info_counter = 0;
@@ -146,6 +148,8 @@ int comm_established_once = 0;
 int temp_counter = 1000;
 bool reverse = false;
 int shield_count = -1;
+int new_pps = 0;
+int pps_received = 0;
 
 //Function Prototypes for individual shields
 //SERVOSHIELD
@@ -363,6 +367,8 @@ void loop()
     recv_set_dio_defaultvalue_counter = 0;
     send_armcommand_counter = 0;
     recv_armcommand_counter = 0;
+    send_pps_counter = 0;
+    recv_pps_counter = 0;
 
   }
 }
@@ -550,6 +556,17 @@ void run_fastrate_code() //100 Hz
             shields[i].portcount = PortCount;
           }
           
+        }
+      }
+      else if (message_type == SERIAL_PPS_ID)
+      {
+        unsigned char rx_count;
+        int status = serialmessagehandler.decode_PPSSerial(packet,&rx_count);
+        if(status == 1)
+        {
+          new_pps = 1;
+          pps_received = rx_count;
+          recv_pps_counter++;
         }
       }
       else if (message_type == SERIAL_Diagnostic_ID)
@@ -826,6 +843,22 @@ void run_mediumrate_code() //10 Hz
     }
     send_mode_counter++;
   }
+  
+  {
+    if(new_pps == 1)
+    {
+      new_pps = 0;
+      char buffer[16];
+      int length;
+      int computed_checksum;
+      int tx_status = serialmessagehandler.encode_PPSSerial(buffer,&length,pps_received);
+      for(int i = 0; i < length; i++)
+      {
+        Serial.write((byte)buffer[i]);
+      }
+      send_pps_counter++;
+    }
+  }
   //DEBUG ONLY
   /*
   delay(10);
@@ -868,7 +901,11 @@ void run_slowrate_code() //1 Hz
       Serial1.println("Arduino Board Rebooting.");
     }
     #endif
-    lcd.print("Rebooting");
+    #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
+    {
+      lcd.print("Rebooting");
+    }
+    #endif
     
     delay(500);
     resetFunc();
@@ -970,6 +1007,16 @@ void run_veryslowrate_code() //0.1 Hz
       Serial1.print(" at: ");
       Serial1.print(1000.0*(double)recv_armcommand_counter/(double)loop_counter);
       Serial1.println(" (Hz)");
+      
+      Serial1.print("Send PPS (0xAB35) times: ");
+      Serial1.print(send_pps_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)send_pps_counter/(double)loop_counter);
+      Serial1.print(" (Hz) Received times: ");
+      Serial1.print(recv_pps_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)recv_pps_counter/(double)loop_counter);
+      Serial1.println(" (Hz)");
     #endif
   }
   #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
@@ -1039,6 +1086,16 @@ void run_veryslowrate_code() //0.1 Hz
       softSerial.print(" at: ");
       softSerial.print(1000.0*(double)recv_armcommand_counter/(double)loop_counter);
       softSerial.println(" (Hz)");   
+      
+      softSerial.print("Send PPS (0xAB35) times: ");
+      softSerial.print(send_pps_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)send_pps_counter/(double)loop_counter);
+      softSerial.print(" (Hz) Received times: ");
+      softSerial.print(recv_pps_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)recv_pps_counter/(double)loop_counter);
+      softSerial.println(" (Hz)");
     #endif
   }
   #endif
