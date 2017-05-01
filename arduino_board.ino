@@ -1,18 +1,21 @@
 //Configuration Defines
-#define BOARD_ID 18
-#define BOARD_TYPE BOARDTYPE_ARDUINOUNO
-#define PRINT_DEBUG_LINES 1
-#define BYPASS_SHIELDCONFIG 0
-#define SHIELD1_TYPE SHIELDTYPE_NONE
-#define SHIELD2_TYPE SHIELDTYPE_NONE
+#define BOARD_ID 17
+#define BOARD_TYPE BOARDTYPE_ARDUINOMEGA
+#define PRINT_DEBUG_LINES 0
+#define SHIELD1_TYPE SHIELDTYPE_TERMINALSHIELD
+#define SHIELD1_ID 0
+#define SHIELD2_TYPE SHIELDTYPE_SERVOSHIELD
+#define SHIELD2_ID 0
 #define SHIELD3_TYPE SHIELDTYPE_NONE
+#define SHIELD3_ID 0
 #define SHIELD4_TYPE SHIELDTYPE_NONE
+#define SHIELD4_ID 0
 
 
 
 #define FIRMWARE_MAJOR_VERSION 0
-#define FIRMWARE_MINOR_VERSION 3
-#define FIRMWARE_BUILD_NUMBER 1
+#define FIRMWARE_MINOR_VERSION 5
+#define FIRMWARE_BUILD_NUMBER 0
 
 #include "Arduino.h"
 #include <SoftwareSerial.h>
@@ -22,13 +25,14 @@
 #include <Wire.h>
 #include <avr/wdt.h>
 
-
-#define MAXNUMBER_SHIELDS 4
-#if BOARD_TYPE == BOARDTYPE_ARDUINOUNO
-#define MAXNUMBER_PORTS_PERSHIELD 2
-#elif BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
-#define MAXNUMBER_PORTS_PERSHIELD 2
+#if BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
+    #define MAXNUMBER_SHIELDS 4
+    #define MAXNUMBER_PORTS_PERSHIELD 4
+#elif BOARD_TYPE == BOARDTYPE_ARDUINOUNO
+    #define MAXNUMBER_SHIELDS 2
+    #define MAXNUMBER_PORTS_PERSHIELD 2
 #endif
+
 #define PORT_SIZE        8
 #define SERIAL_MESSAGE_SIZE 16 //Start Delimiter thru Checksum
 
@@ -70,11 +74,19 @@ typedef struct
   int id;
   int type;
   boolean isconfigured;
-  int portcount;
-  port ports[MAXNUMBER_PORTS_PERSHIELD];
+  boolean dioports_configured;
+  boolean anaports_configured;
+  int dio_portcount;
+  int ana_portcount;
+  int dio_portconfig_messages;
+  int ana_portconfig_messages;
+  port dio_ports[MAXNUMBER_PORTS_PERSHIELD];
+  port ana_ports[MAXNUMBER_PORTS_PERSHIELD];
 } shield;
 
 shield shields[MAXNUMBER_SHIELDS];
+boolean dio_portmessagesreceived[MAXNUMBER_SHIELDS*MAXNUMBER_PORTS_PERSHIELD];
+boolean ana_portmessagesreceived[MAXNUMBER_SHIELDS*MAXNUMBER_PORTS_PERSHIELD];
 void run_veryfastrate_code(); //1000 Hz
 void run_fastrate_code(); //100 Hz
 void run_mediumrate_code(); //10 Hz
@@ -86,12 +98,13 @@ void run_veryslowrate_code(); //0.1 Hz
   Adafruit_PWMServoDriver pwm;
 #endif
 
-int board_mode = BOARDMODE_BOOT;
+int board_mode = BOARDMODE_BOOTING;
 int node_mode = BOARDMODE_UNDEFINED;
 unsigned int armed_command = ROVERCOMMAND_DISARM;
+int dio_portconfig_messages = 0;
+int ana_portconfig_messages = 0;
 unsigned int armed_state = ARMEDSTATUS_DISARMED_CANNOTARM;
 unsigned char recv_buffer[32];
-int available_i2c_devices[MAXNUMBER_SHIELDS*2];
 int current_message_buffer_length = 0;
 int message_length = 0;
 int message_type = 0;
@@ -132,6 +145,8 @@ unsigned long send_set_dio_defaultvalue_counter = 0;
 unsigned long recv_set_dio_defaultvalue_counter = 0;
 unsigned long send_armcommand_counter = 0;
 unsigned long recv_armcommand_counter = 0;
+unsigned long send_ana_counter = 0;
+unsigned long recv_ana_counter = 0;
 unsigned long send_pps_counter = 0;
 unsigned long recv_pps_counter = 0;
 unsigned long time_since_last_rx = 0;
@@ -170,7 +185,6 @@ int pps_received = 0;
   int current_menupage = MENUPAGE_DEFAULT;
 #endif
 
-void scan_for_shields();
 void init_shields();
 String map_level_tostring(int v);
 String map_component_tostring(int v);
@@ -180,40 +194,163 @@ String map_message_tostring(int v);
 void(*resetFunc)(void) = 0;
 void init_shields()
 {
-  for(int s = 0; s < (MAXNUMBER_SHIELDS*2);s++)
-  {
-    available_i2c_devices[s] = -1;
-  }
-  for(int s = 0; s < MAXNUMBER_SHIELDS;s++)
-  {
-    shields[s].id = -1; //0 is a valid Shield ID (which represents the Arduino Board)
-    shields[s].type = SHIELDTYPE_UNDEFINED;
-    shields[s].isconfigured = false;
-    shields[s].portcount = 0;
-    int pinindex = 0;
-    for(int p=0; p < MAXNUMBER_PORTS_PERSHIELD;p++)
+    for(int i = 0; i < MAXNUMBER_SHIELDS*MAXNUMBER_PORTS_PERSHIELD; i++)
     {
-      shields[s].ports[p].id = -1;
-      for(int i = 0; i < PORT_SIZE; i++)
-      {
-        shields[s].ports[p].Pin_Number[i] = pinindex++;
-        shields[s].ports[p].Pin_Value[i] = 0;
-        shields[s].ports[p].Pin_DefaultValue[i] = 0;
-        /*
-        Serial1.print("port: ");
-        Serial1.print(p,DEC);
-        Serial1.print(" i: ");
-        Serial1.print(i,DEC);
-        Serial1.print(" pin: ");
-        Serial1.print(pinindex,DEC);
-        Serial1.print("/");
-        Serial1.println(shields[s].ports[p].Pin_Number[i]);
-        */
-      }
+        dio_portmessagesreceived[i] = false;
+        ana_portmessagesreceived[i] = false;
     }
-  }
+    int shield_index = 0;
+    int shield_available = 1;
+    while(shield_available == 1)
+    {
+        int shield_type = 0;
+        int shield_id = 0;
+        switch(shield_index)
+        {
+            case 0:
+                shield_type = SHIELD1_TYPE;
+                shield_id = SHIELD1_ID;
+                break;
+            case 1:
+                shield_type = SHIELD2_TYPE;
+                shield_id = SHIELD2_ID;
+                break;
+            case 2:
+                shield_type = SHIELD3_TYPE;
+                shield_id = SHIELD3_ID;
+                break;
+            case 3:
+                shield_type = SHIELD4_TYPE;
+                shield_id = SHIELD4_ID;
+                break;
+            default:
+                shield_available = 0;
+                break;
+        }
+        shields[shield_index].id = shield_id;
+        shields[shield_index].type = shield_type;
+        shields[shield_index].isconfigured = false;
+        switch(shield_type)
+        {
+            case SHIELDTYPE_UNDEFINED:
+                //Do Nothing
+                shields[shield_index].dio_portcount = 0;
+                shields[shield_index].dio_portconfig_messages = 0;
+                shields[shield_index].ana_portcount = 0;
+                shields[shield_index].ana_portconfig_messages = 0;
+                break;
+            case SHIELDTYPE_NONE:
+                //Do Nothing
+                shields[shield_index].dio_portcount = 0;
+                shields[shield_index].dio_portconfig_messages = 0;
+                shields[shield_index].ana_portcount = 0;
+                shields[shield_index].ana_portconfig_messages = 0;
+                break;
+            case SHIELDTYPE_SERVOSHIELD:
+                shields[shield_index].ana_portcount = 0;
+                shields[shield_index].dio_portcount = 2;
+                shields[shield_index].dio_portconfig_messages = 0;
+                shields[shield_index].ana_portconfig_messages = 0;
+                for(int i = 0; i < shields[shield_index].dio_portcount; i++)
+                {
+                    shields[shield_index].dio_ports[i].id = i;
+                    for(int j = 0; j < PORT_SIZE; j++)
+                    {
+                        shields[shield_index].dio_ports[i].Pin_Number[j] = (PORT_SIZE*i)+j;
+                        shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_PWM_OUTPUT;
+                        shields[shield_index].dio_ports[i].Pin_Value[j] = 127;
+                        shields[shield_index].dio_ports[i].Pin_DefaultValue[j] = 127;
+                    }
+                }
+                break;
+            case SHIELDTYPE_LCDSHIELD:
+                break;
+            case SHIELDTYPE_TERMINALSHIELD: //This is the default pinout for whatever arduino board 
+                if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
+                {
+                    shields[shield_index].dio_portconfig_messages = 0;
+                    shields[shield_index].ana_portconfig_messages = 0;
+                    shields[shield_index].dio_portcount = 4;
+                    shields[shield_index].ana_portcount = 4;
+                    for(int i = 0; i < shields[shield_index].dio_portcount; i++)
+                    {
+                        shields[shield_index].dio_ports[i].id = i;
+                        for(int j = 0; j < 8; j++)
+                        {
+                            shields[shield_index].dio_ports[i].Pin_Number[j] = (8*i)+j;
+                            shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_DIGITAL_INPUT;
+                            shields[shield_index].dio_ports[i].Pin_Value[j] = 127;
+                            shields[shield_index].dio_ports[i].Pin_DefaultValue[j] = 127;
+                        }
+                    }
+                    for(int i = 0; i < shields[shield_index].ana_portcount; i++)
+                    {
+                        shields[shield_index].ana_ports[i].id = i;
+                        for(int j = 0; j < 4; j++)
+                        {
+                            shields[shield_index].ana_ports[i].Pin_Number[j] = (4*i)+j;
+                            shields[shield_index].ana_ports[i].Pin_Mode[j] = PINMODE_ANALOG_INPUT;
+                            shields[shield_index].ana_ports[i].Pin_Value[j] = 0;
+                            shields[shield_index].ana_ports[i].Pin_DefaultValue[j] = 0;
+                        }
+                    }
+                }
+                else if(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
+                {
+                    shields[shield_index].dio_portconfig_messages = 0;
+                    shields[shield_index].ana_portconfig_messages = 0;
+                    shields[shield_index].dio_portcount = 2;
+                    shields[shield_index].ana_portcount = 2;
+                    for(int i = 0; i < shields[shield_index].dio_portcount; i++)
+                    {
+                        shields[shield_index].dio_ports[i].id = i;
+                        for(int j = 0; j < 8; j++)
+                        {
+                            shields[shield_index].dio_ports[i].Pin_Number[j] = (8*i)+j;
+                            if(shields[shield_index].dio_ports[i].Pin_Number[j] > 13)
+                            {
+                                shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_NOTAVAILABLE;
+                            }
+                            else
+                            {
+                                shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_DIGITAL_INPUT;
+                            }
+                            shields[shield_index].dio_ports[i].Pin_Value[j] = 127;
+                            shields[shield_index].dio_ports[i].Pin_DefaultValue[j] = 127;
+                        }
+                    }
+                    for(int i = 0; i < shields[shield_index].ana_portcount; i++)
+                    {
+                        shields[shield_index].ana_ports[i].id = i;
+                        for(int j = 0; j < 4; j++)
+                        {
+                            shields[shield_index].ana_ports[i].Pin_Number[j] = (4*i)+j;
+                            if(shields[shield_index].ana_ports[i].Pin_Number[j] > 5)
+                            {
+                                shields[shield_index].ana_ports[i].Pin_Mode[j] = PINMODE_NOTAVAILABLE;
+                            }
+                            else
+                            {
+                                shields[shield_index].ana_ports[i].Pin_Mode[j] = PINMODE_ANALOG_INPUT;
+                            }
+                            shields[shield_index].ana_ports[i].Pin_Value[j] = 0;
+                            shields[shield_index].ana_ports[i].Pin_DefaultValue[j] = 0;
+                        }
+                    }
+                }
+                break;
+            case SHIELDTYPE_RELAYSHIELD:
+                shields[shield_index].dio_portcount = 0;
+                shields[shield_index].ana_portcount = 0;
+                break;
+        }
+        
+        shield_index++;
+    }
 }
 void setup() {
+  //Boot Procedures
+  board_mode = BOARDMODE_BOOTING;
   wdt_disable();
   wdt_enable(WDTO_1S);
   memset(recv_buffer,0,sizeof(recv_buffer));
@@ -235,6 +372,8 @@ void setup() {
     Serial1.println(FIRMWARE_MINOR_VERSION,DEC);
     Serial1.print("FW Build Number: ");
     Serial1.println(FIRMWARE_BUILD_NUMBER,DEC);
+    
+    
   }
   #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
   {
@@ -260,10 +399,9 @@ void setup() {
   #endif
   delay(500);
   wdt_reset();
+  board_mode = BOARDMODE_INITIALIZING;
   init_shields();
   
-  wdt_reset();
-  scan_for_shields();
   wdt_reset();
   
   #if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
@@ -277,44 +415,6 @@ void setup() {
  #endif
 }
 
-void scan_for_shields()
-{
-  Wire.begin();
-  byte error;
-  int found_index = 0;
-  for(int i = 1; i < 127; i++)
-  {
-    wdt_reset();
-    Wire.beginTransmission(i);
-    //Wire.write(1);
-    error = Wire.endTransmission();
-    if(error == 0)
-    {
-      available_i2c_devices[found_index++] = i;
-    }
-    else
-    {
-    }
-    delay(10);
-  }
-  #if BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
-  {  
-    for(int i = 0; i < found_index; i++)
-    {
-      Serial1.print("Found I2C Device at Address: ");
-      Serial1.println(available_i2c_devices[i],HEX);
-    }
-  }
-  #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
-  {
-    for(int i = 0; i < found_index; i++)
-    {
-      softSerial.print("Found I2C Device at Address: ");
-      softSerial.println(available_i2c_devices[i],HEX);
-    }
-  }
-  #endif
-}
 void loop() 
 { 
   wdt_reset();
@@ -369,6 +469,8 @@ void loop()
     recv_armcommand_counter = 0;
     send_pps_counter = 0;
     recv_pps_counter = 0;
+    send_ana_counter = 0;
+    recv_ana_counter = 0;
 
   }
 }
@@ -415,12 +517,12 @@ void run_veryfastrate_code() //1000 Hz
 void run_fastrate_code() //100 Hz
 {
   time_since_last_rx++;
-  
+  /*
   if(board_mode == BOARDMODE_RUNNING)
   {
     for(int s = 0; s < MAXNUMBER_SHIELDS;s++)
     {
-      for(int p = 0; p < MAXNUMBER_PORTS_PERSHIELD;p++)
+      for(int p = 0; p < MAXNUMBER_PORTS_PERSHIELD;p++) //change to port count
       {
         for(int j = 0; j < PORT_SIZE;j++)
         {
@@ -470,6 +572,7 @@ void run_fastrate_code() //100 Hz
       }
     }
   }
+  */
   if(message_complete == true)
   {
     int computed_checksum = 0;
@@ -489,192 +592,35 @@ void run_fastrate_code() //100 Hz
       {
         packet[i] = recv_buffer[i+3]; 
       }
-      if(message_type == SERIAL_Configure_Shield_ID)
-      {
-        recv_configure_shield_counter++;
-        if(board_mode == BOARDMODE_INITIALIZING)
-        {
-          unsigned char ShieldCount,ShieldType,ShieldID,PortCount;
-          int status = serialmessagehandler.decode_Configure_ShieldSerial(packet,&ShieldCount,&ShieldType,&ShieldID,&PortCount);
-          if(shield_count == -1)
-          {
-            shield_count = ShieldCount;
-          }
-          bool add_new_shield = false;
-          int shield_info_received_counter = 0;
-          
-          int i = 0;
-          for(i = 0; i < MAXNUMBER_SHIELDS; i++)
-          {
-            if(shields[i].id == -1)
-            {
-              add_new_shield = true;
-            }
-            else
-            {
-              shield_info_received_counter++;
-            }
-            if(add_new_shield == true)
-            {
-              break;
-            }
-          }
-          if((shield_count > 0) &&
-             (shield_info_received_counter == shield_count))
-          {
-            board_mode = BOARDMODE_SHIELDS_CONFIGURED;
-            add_new_shield = false;
-            bool device_available = false;
-            bool matched = false;
-            #if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
-            if((ShieldID > 0) &&
-               (ShieldType == SHIELDTYPE_SERVOSHIELD)) //Need to see if device is I2C that is available
-            {
-              for(int s = 0; s < (MAXNUMBER_SHIELDS*2);s++)
-              {
-                if(available_i2c_devices[s] == ShieldID)
-                {
-                  pwm = Adafruit_PWMServoDriver(ShieldID);
-                  pwm.begin();
-                  pwm.setPWMFreq(SERVOSHIELD_UPDATE_RATE);
-                  
-                  
-                }
-              }
-            }
-            #endif
-            if(matched == true)
-            {
-              
-            }
-            
-          }
-          if(add_new_shield == true)
-          {
-            shields[i].id = ShieldID;
-            shields[i].type = ShieldType;
-            shields[i].portcount = PortCount;
-          }
-          
-        }
-      }
-      else if (message_type == SERIAL_PPS_ID)
-      {
-        unsigned char rx_count;
-        int status = serialmessagehandler.decode_PPSSerial(packet,&rx_count);
-        if(status == 1)
-        {
-          new_pps = 1;
-          pps_received = rx_count;
-          recv_pps_counter++;
-        }
-      }
-      else if (message_type == SERIAL_Diagnostic_ID)
-      {
-        //int decode_DiagnosticSerial(unsigned char* inpacket,unsigned char* System,unsigned char* SubSystem,unsigned char* Component,unsigned char* Diagnostic_Type,unsigned char* Level,unsigned char* Diagnostic_Message);
-        unsigned char System, Subsystem,Component,DiagnosticType,Level,Message;
-        int status = serialmessagehandler.decode_DiagnosticSerial(packet,&System,&Subsystem,&Component,&DiagnosticType,&Level,&Message);
-        if(status == 1)
-        {
-          #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
-          {
-            if(Level == DEBUG) { level_debug_counter++;  }
-            else if(Level == INFO)  { level_info_counter++;  }
-            else if(Level == NOTICE) { level_notice_counter++;  }
-            else if(Level == WARN)  { level_warn_counter++; }
-            else if(Level == ERROR) { level_error_counter++; }
-            else if(Level == FATAL) { level_fatal_counter++; }
-            print_to_lcd(System,Subsystem,Component,DiagnosticType,Level,Message);
-          }
-          #endif
-        }
-      }
-      else if(message_type == SERIAL_Set_DIO_Port_ID)
-      {
-        unsigned char ShieldID,PortID;
-        unsigned char v1,v2,v3,v4,v5,v6,v7,v8;
-        int status = serialmessagehandler.decode_Set_DIO_PortSerial(packet,&ShieldID,&PortID,&v1,&v2,&v3,&v4,&v5,&v6,&v7,&v8);
-        for(int s = 0; s < MAXNUMBER_SHIELDS;s++)
-        {
-          if(shields[s].id == ShieldID)
-          {
-            for(int p = 0; p < MAXNUMBER_PORTS_PERSHIELD;p++)
-            {
-              
-              if(shields[s].ports[p].id == PortID)
-              {
-                shields[s].ports[p].Pin_Value[0] = v1;
-                shields[s].ports[p].Pin_Value[1] = v2;
-                shields[s].ports[p].Pin_Value[2] = v3;
-                shields[s].ports[p].Pin_Value[3] = v4;
-                shields[s].ports[p].Pin_Value[4] = v5;
-                shields[s].ports[p].Pin_Value[5] = v6;
-                shields[s].ports[p].Pin_Value[6] = v7;
-                shields[s].ports[p].Pin_Value[7] = v8;
-              }
-            }
-          }
-        }
-        recv_set_dio_counter++;
-      }
-      else if(message_type == SERIAL_Mode_ID)
+      if(message_type == SERIAL_Mode_ID)
       {
         unsigned char node_id,node_status,node_type;
         int status = serialmessagehandler.decode_ModeSerial(packet,&node_type,&node_id,&node_status);
         node_mode = node_status;
         recv_mode_counter++;
       }
-      else if(message_type == SERIAL_Set_DIO_Port_DefaultValue_ID)
-      {
-        unsigned char ShieldID,PortID;
-        unsigned char v1,v2,v3,v4,v5,v6,v7,v8;
-        int status = serialmessagehandler.decode_Set_DIO_Port_DefaultValueSerial(packet,&ShieldID,&PortID,&v1,&v2,&v3,&v4,&v5,&v6,&v7,&v8);
-        for(int s = 0; s < MAXNUMBER_SHIELDS;s++)
-        {
-          if(shields[s].id == ShieldID)
-          {
-            for(int p = 0; p < MAXNUMBER_PORTS_PERSHIELD;p++)
-            {
-              if(shields[s].ports[p].id == PortID)
-              {
-                shields[s].ports[p].Pin_DefaultValue[0] = v1;
-                shields[s].ports[p].Pin_Value[0] = v1;
-                shields[s].ports[p].Pin_DefaultValue[1] = v2;
-                shields[s].ports[p].Pin_Value[1] = v2;
-                shields[s].ports[p].Pin_DefaultValue[2] = v3;
-                shields[s].ports[p].Pin_Value[2] = v3;
-                shields[s].ports[p].Pin_DefaultValue[3] = v4;
-                shields[s].ports[p].Pin_Value[3] = v4;
-                shields[s].ports[p].Pin_DefaultValue[4] = v5;
-                shields[s].ports[p].Pin_Value[4] = v5;
-                shields[s].ports[p].Pin_DefaultValue[5] = v6;
-                shields[s].ports[p].Pin_Value[5] = v6;
-                shields[s].ports[p].Pin_DefaultValue[6] = v7;
-                shields[s].ports[p].Pin_Value[6] = v7;
-                shields[s].ports[p].Pin_DefaultValue[7] = v8;
-                shields[s].ports[p].Pin_Value[7] = v8;
-              }
-            }
-          }
-        }
-        recv_set_dio_defaultvalue_counter++;
-      }
-      else if(message_type == SERIAL_Arm_Command_ID)
-      {
-        recv_armcommand_counter++;
-        unsigned char Command;
-        int status = serialmessagehandler.decode_Arm_CommandSerial(packet,&Command);
-        armed_command = Command;
-      }
       else if(message_type == SERIAL_Configure_DIO_Port_ID)
       {
         
         recv_configure_dio_counter++;
-        unsigned char ShieldID,PortID;
+        unsigned char ShieldID,PortID,messageindex,messagecount;
         unsigned char v1,v2,v3,v4,v5,v6,v7,v8;
-        
-        int status = serialmessagehandler.decode_Configure_DIO_PortSerial(packet,&ShieldID,&PortID,&v1,&v2,&v3,&v4,&v5,&v6,&v7,&v8);
-        
+        int status = serialmessagehandler.decode_Configure_DIO_PortSerial(packet,&ShieldID,&PortID,&messageindex,&messagecount,
+            &v1,&v2,&v3,&v4,&v5,&v6,&v7,&v8);
+        if(status == 1)
+        {
+            board_mode = BOARDMODE_CONFIGURING;
+            dio_portconfig_messages = messagecount;
+            dio_portmessagesreceived[messageindex-1] = true;
+            for(int s = 0; s < MAXNUMBER_SHIELDS; s++)
+            {
+                if(shields[s].id == ShieldID)
+                {
+                    
+                }
+            }
+        }
+        /*
         for(int s = 0; s < MAXNUMBER_SHIELDS; s++)
         {
           if(shields[s].id == ShieldID)
@@ -777,7 +723,7 @@ void run_fastrate_code() //100 Hz
               }
             }
             int configured_port_counter = 0;
-            for(int i = 0; i < MAXNUMBER_PORTS_PERSHIELD; i++)
+            for(int i = 0; i < MAXNUMBER_PORTS_PERSHIELD; i++) //change to port count
             {
               if(shields[s].ports[i].id >= 0)
               {
@@ -785,13 +731,14 @@ void run_fastrate_code() //100 Hz
               }
             }
             if((shields[s].portcount > 0) &&
-             (configured_port_counter == shields[s].portcount))
+             (configured_port_counter == shields[s].portcount))  
             {
               board_mode = BOARDMODE_INITIALIZED;
             }
             
           }
         }
+        */
       }
     }
     else
@@ -843,6 +790,29 @@ void run_mediumrate_code() //10 Hz
     }
     send_mode_counter++;
   }
+  /*
+  #if(( BOARD_TYPE == BOARDTYPE_ARDUINOMEGA) && (SHIELD1_TYPE == SHIELDTYPE_TERMINALSHIELD))
+  {
+
+    if(board_mode == BOARDMODE_RUNNING)
+    {
+      char buffer[16];
+      int length;
+      int computed_checksum;
+      int v1 = analogRead(ANALOG0);
+      int v2 = analogRead(ANALOG1);
+      int v3 = analogRead(ANALOG2);
+      int v4 = analogRead(ANALOG3);
+      int tx_status = serialmessagehandler.encode_Get_ANA_PortSerial(buffer,&length,0,0,v1,v2,v3,v4);
+      for(int i = 0; i < length; i++)
+      {
+        Serial.write((byte)buffer[i]);
+      }
+      send_ana_counter++;
+    }
+      
+  }
+  #endif
   
   {
     if(new_pps == 1)
@@ -881,18 +851,37 @@ void run_slowrate_code() //1 Hz
       update_lcd();
   }
   #endif
-  if(board_mode == BOARDMODE_BOOT)
+  if(board_mode == BOARDMODE_INITIALIZING) //Waiting on Configuration
   {
-    board_mode = BOARDMODE_INITIALIZING;
   }
-  if(board_mode == BOARDMODE_INITIALIZED)
+  if(board_mode == BOARDMODE_CONFIGURING)  //Receiving Config
+  {
+    boolean dio_portready = true;
+    boolean ana_portready = true;
+    for(int i = 0; i < dio_portconfig_messages; i++)
+    {
+        if(dio_portmessagesreceived[i] == true) { dio_portready & true;}
+        else { dio_portready = false;}
+    }
+    for(int i = 0; i < ana_portconfig_messages; i++)
+    {
+        if(ana_portmessagesreceived[i] == true) { ana_portready & true;}
+        else { ana_portready = false;}
+    }
+    if((dio_portready == true) && (ana_portready == true))
+    {
+        board_mode = BOARDMODE_CONFIGURED;
+    }
+  }
+  else if(board_mode == BOARDMODE_CONFIGURED)  //Config complete
+  {
+    armed_state = ARMEDSTATUS_DISARMED;
+    board_mode = BOARDMODE_RUNNING;
+  }
+  if(board_mode == BOARDMODE_INITIALIZING)
   {
     board_mode = BOARDMODE_RUNNING;
     armed_state = ARMEDSTATUS_DISARMED;
-  }
-  if((BYPASS_SHIELDCONFIG == 1) && (board_mode == BOARDMODE_SHIELDS_CONFIGURED))
-  {
-    board_mode = BOARDMODE_RUNNING;
   }
   if((board_mode == BOARDMODE_RUNNING) && (node_mode == BOARDMODE_INITIALIZING))
   {
@@ -988,6 +977,16 @@ void run_veryslowrate_code() //0.1 Hz
       Serial1.print(1000.0*(double)recv_set_dio_counter/(double)loop_counter);
       Serial1.println(" (Hz)");
       
+      Serial1.print("Send ANA (0xAB20) times: ");
+      Serial1.print(send_ana_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)send_ana_counter/(double)loop_counter);
+      Serial1.print(" (Hz) Received times: ");
+      Serial1.print(recv_ana_counter,DEC);
+      Serial1.print(" at: ");
+      Serial1.print(1000.0*(double)recv_ana_counter/(double)loop_counter);
+      Serial1.println(" (Hz)");
+      
       Serial1.print("Send Set DIO DefaultValue (0xAB32) times: ");
       Serial1.print(send_set_dio_defaultvalue_counter,DEC);
       Serial1.print(" at: ");
@@ -1067,6 +1066,16 @@ void run_veryslowrate_code() //0.1 Hz
       softSerial.print(1000.0*(double)recv_set_dio_counter/(double)loop_counter);
       softSerial.println(" (Hz)");
       
+      softSerial.print("Send ANA (0xAB20) times: ");
+      softSerial.print(send_ana_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)send_ana_counter/(double)loop_counter);
+      softSerial.print(" (Hz) Received times: ");
+      softSerial.print(recv_ana_counter,DEC);
+      softSerial.print(" at: ");
+      softSerial.print(1000.0*(double)recv_ana_counter/(double)loop_counter);
+      softSerial.println(" (Hz)");
+      
       softSerial.print("Send Set DIO DefaultValue (0xAB32) times: ");
       softSerial.print(send_set_dio_defaultvalue_counter,DEC);
       softSerial.print(" at: ");
@@ -1104,7 +1113,7 @@ void run_veryslowrate_code() //0.1 Hz
   for(int s = 0; s < MAXNUMBER_SHIELDS;s++)
   {
     int pinindex = 0;
-    for(int p=0; p < MAXNUMBER_PORTS_PERSHIELD;p++)
+    for(int p=0; p < MAXNUMBER_PORTS_PERSHIELD;p++) //change to port count
     {
       for(int i = 0; i < PORT_SIZE; i++)
       {
@@ -1129,9 +1138,9 @@ void serialEvent()
     int bytecounter = 0;
     while((Serial.available()) && (bytecounter < bytestoread))
     {
-      c = Serial.read();  
-     delay(1);   
-      recv_buffer[bytecounter++] = c;
+        c = Serial.read();  
+        delay(1);   
+        recv_buffer[bytecounter++] = c;
       
     }
     /*
