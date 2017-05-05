@@ -1,14 +1,17 @@
 //Board Configuration Defines
+#define PRINT_DEBUG_LINES 1
+
 #define BOARD_ID 17
-#define BOARD_TYPE BOARDTYPE_ARDUINOUNO
+#define BOARD_TYPE BOARDTYPE_ARDUINOMEGA
 #define SHIELD1_TYPE SHIELDTYPE_TERMINALSHIELD
-#define SHIELD1_ID 0
+#define SHIELD1_ID 0 //Hex
 #define SHIELD2_TYPE SHIELDTYPE_SERVOSHIELD
-#define SHIELD2_ID 0
+#define SHIELD2_ID 40 //Hex
 #define SHIELD3_TYPE SHIELDTYPE_NONE
-#define SHIELD3_ID 0
+#define SHIELD3_ID 0 //Hex
 #define SHIELD4_TYPE SHIELDTYPE_NONE
-#define SHIELD4_ID 0
+#define SHIELD4_ID 0 //Hex
+
 
 //Useful Debug Defines
 #define PRINT_DEBUG_LINES 1
@@ -260,115 +263,118 @@ void init_shields()
                 shield_available = 0;
                 break;
         }
-        shields[shield_index].id = shield_id;
-        shields[shield_index].type = shield_type;
-        shields[shield_index].isconfigured = false;
-        switch(shield_type)
+        if(shield_available == 1)
         {
-            case SHIELDTYPE_UNDEFINED:
-                //Do Nothing
-                shields[shield_index].dio_portcount = 0;
-                shields[shield_index].ana_portcount = 0;
-                break;
-            case SHIELDTYPE_NONE:
-                //Do Nothing
-                shields[shield_index].dio_portcount = 0;
-                shields[shield_index].ana_portcount = 0;
-                break;
-            case SHIELDTYPE_SERVOSHIELD:
-                shields[shield_index].ana_portcount = 0;
-                shields[shield_index].dio_portcount = 2;
-                for(int i = 0; i < shields[shield_index].dio_portcount; i++)
-                {
-                    shields[shield_index].dio_ports[i].id = i;
-                    for(int j = 0; j < DIOPORT_SIZE; j++)
-                    {
-                        shields[shield_index].dio_ports[i].Pin_Number[j] = (DIOPORT_SIZE*i)+j;
-                        shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_PWM_OUTPUT;
-                        shields[shield_index].dio_ports[i].Pin_Value[j] = 127;
-                        shields[shield_index].dio_ports[i].Pin_DefaultValue[j] = 127;
-                    }
-                }
-                break;
-            case SHIELDTYPE_LCDSHIELD:
-                break;
-            case SHIELDTYPE_TERMINALSHIELD: //This is the default pinout for whatever arduino board 
-                if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
-                {
-                    shields[shield_index].dio_portcount = 4;
-                    shields[shield_index].ana_portcount = 4;
-                    for(int i = 0; i < shields[shield_index].dio_portcount; i++)
-                    {
-                        shields[shield_index].dio_ports[i].id = i;
-                        for(int j = 0; j < DIOPORT_SIZE; j++)
-                        {
-                            shields[shield_index].dio_ports[i].Pin_Number[j] = (DIOPORT_SIZE*i)+j;
-                            shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_DIGITAL_INPUT;
-                            shields[shield_index].dio_ports[i].Pin_Value[j] = 127;
-                            shields[shield_index].dio_ports[i].Pin_DefaultValue[j] = 127;
-                        }
-                    }
-                    for(int i = 0; i < shields[shield_index].ana_portcount; i++)
-                    {
-                        shields[shield_index].ana_ports[i].id = i;
-                        for(int j = 0; j < DIOPORT_SIZE; j++)
-                        {
-                            shields[shield_index].ana_ports[i].Pin_Number[j] = (ANAPORT_SIZE*i)+j;
-                            shields[shield_index].ana_ports[i].Pin_Mode[j] = PINMODE_ANALOG_INPUT;
-                            shields[shield_index].ana_ports[i].Pin_Value[j] = 0;
-                            shields[shield_index].ana_ports[i].Pin_DefaultValue[j] = 0;
-                        }
-                    }
-                }
-                else if(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
-                {
-                    shields[shield_index].dio_portcount = 2;
-                    shields[shield_index].ana_portcount = 2;
-                    for(int i = 0; i < shields[shield_index].dio_portcount; i++)
-                    {
-                        shields[shield_index].dio_ports[i].id = i;
-                        for(int j = 0; j < DIOPORT_SIZE; j++)
-                        {
-                            shields[shield_index].dio_ports[i].Pin_Number[j] = (DIOPORT_SIZE*i)+j;
-                            if(shields[shield_index].dio_ports[i].Pin_Number[j] > 13)
-                            {
-                                shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_NOTAVAILABLE;
-                            }
-                            else
-                            {
-                                shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_DIGITAL_INPUT;
-                            }
-                            shields[shield_index].dio_ports[i].Pin_Value[j] = 127;
-                            shields[shield_index].dio_ports[i].Pin_DefaultValue[j] = 127;
-                        }
-                    }
-                    for(int i = 0; i < shields[shield_index].ana_portcount; i++)
-                    {
-                        shields[shield_index].ana_ports[i].id = i;
-                        for(int j = 0; j < ANAPORT_SIZE; j++)
-                        {
-                            shields[shield_index].ana_ports[i].Pin_Number[j] = (ANAPORT_SIZE*i)+j;
-                            if(shields[shield_index].ana_ports[i].Pin_Number[j] > 5)
-                            {
-                                shields[shield_index].ana_ports[i].Pin_Mode[j] = PINMODE_NOTAVAILABLE;
-                            }
-                            else
-                            {
-                                shields[shield_index].ana_ports[i].Pin_Mode[j] = PINMODE_ANALOG_INPUT;
-                            }
-                            shields[shield_index].ana_ports[i].Pin_Value[j] = 0;
-                            shields[shield_index].ana_ports[i].Pin_DefaultValue[j] = 0;
-                        }
-                    }
-                }
-                break;
-            case SHIELDTYPE_RELAYSHIELD:
-                shields[shield_index].dio_portcount = 0;
-                shields[shield_index].ana_portcount = 0;
-                break;
-        }
-        
-        shield_index++;
+          shields[shield_index].id = shield_id;
+          shields[shield_index].type = shield_type;
+          shields[shield_index].isconfigured = false;
+          switch(shield_type)
+          {
+              case SHIELDTYPE_UNDEFINED:
+                  //Do Nothing
+                  shields[shield_index].dio_portcount = 0;
+                  shields[shield_index].ana_portcount = 0;
+                  break;
+              case SHIELDTYPE_NONE:
+                  //Do Nothing
+                  shields[shield_index].dio_portcount = 0;
+                  shields[shield_index].ana_portcount = 0;
+                  break;
+              case SHIELDTYPE_SERVOSHIELD:
+                  shields[shield_index].ana_portcount = 0;
+                  shields[shield_index].dio_portcount = 2;
+                  for(int i = 0; i < shields[shield_index].dio_portcount; i++)
+                  {
+                      shields[shield_index].dio_ports[i].id = i;
+                      for(int j = 0; j < DIOPORT_SIZE; j++)
+                      {
+                          shields[shield_index].dio_ports[i].Pin_Number[j] = (DIOPORT_SIZE*i)+j;
+                          shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_PWM_OUTPUT;
+                          shields[shield_index].dio_ports[i].Pin_Value[j] = 127;
+                          shields[shield_index].dio_ports[i].Pin_DefaultValue[j] = 127;
+                      }
+                  }
+                  break;
+              case SHIELDTYPE_LCDSHIELD:
+                  break;
+              case SHIELDTYPE_TERMINALSHIELD: //This is the default pinout for whatever arduino board 
+                  if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
+                  {
+                      shields[shield_index].dio_portcount = 4;
+                      shields[shield_index].ana_portcount = 4;
+                      for(int i = 0; i < shields[shield_index].dio_portcount; i++)
+                      {
+                          shields[shield_index].dio_ports[i].id = i;
+                          for(int j = 0; j < DIOPORT_SIZE; j++)
+                          {
+                              shields[shield_index].dio_ports[i].Pin_Number[j] = (DIOPORT_SIZE*i)+j;
+                              shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_DIGITAL_INPUT;
+                              shields[shield_index].dio_ports[i].Pin_Value[j] = 127;
+                              shields[shield_index].dio_ports[i].Pin_DefaultValue[j] = 127;
+                          }
+                      }
+                      for(int i = 0; i < shields[shield_index].ana_portcount; i++)
+                      {
+                          shields[shield_index].ana_ports[i].id = i;
+                          for(int j = 0; j < DIOPORT_SIZE; j++)
+                          {
+                              shields[shield_index].ana_ports[i].Pin_Number[j] = (ANAPORT_SIZE*i)+j;
+                              shields[shield_index].ana_ports[i].Pin_Mode[j] = PINMODE_ANALOG_INPUT;
+                              shields[shield_index].ana_ports[i].Pin_Value[j] = 0;
+                              shields[shield_index].ana_ports[i].Pin_DefaultValue[j] = 0;
+                          }
+                      }
+                  }
+                  else if(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
+                  {
+                      shields[shield_index].dio_portcount = 2;
+                      shields[shield_index].ana_portcount = 2;
+                      for(int i = 0; i < shields[shield_index].dio_portcount; i++)
+                      {
+                          shields[shield_index].dio_ports[i].id = i;
+                          for(int j = 0; j < DIOPORT_SIZE; j++)
+                          {
+                              shields[shield_index].dio_ports[i].Pin_Number[j] = (DIOPORT_SIZE*i)+j;
+                              if(shields[shield_index].dio_ports[i].Pin_Number[j] > 13)
+                              {
+                                  shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_NOTAVAILABLE;
+                              }
+                              else
+                              {
+                                  shields[shield_index].dio_ports[i].Pin_Mode[j] = PINMODE_DIGITAL_INPUT;
+                              }
+                              shields[shield_index].dio_ports[i].Pin_Value[j] = 127;
+                              shields[shield_index].dio_ports[i].Pin_DefaultValue[j] = 127;
+                          }
+                      }
+                      for(int i = 0; i < shields[shield_index].ana_portcount; i++)
+                      {
+                          shields[shield_index].ana_ports[i].id = i;
+                          for(int j = 0; j < ANAPORT_SIZE; j++)
+                          {
+                              shields[shield_index].ana_ports[i].Pin_Number[j] = (ANAPORT_SIZE*i)+j;
+                              if(shields[shield_index].ana_ports[i].Pin_Number[j] > 5)
+                              {
+                                  shields[shield_index].ana_ports[i].Pin_Mode[j] = PINMODE_NOTAVAILABLE;
+                              }
+                              else
+                              {
+                                  shields[shield_index].ana_ports[i].Pin_Mode[j] = PINMODE_ANALOG_INPUT;
+                              }
+                              shields[shield_index].ana_ports[i].Pin_Value[j] = 0;
+                              shields[shield_index].ana_ports[i].Pin_DefaultValue[j] = 0;
+                          }
+                      }
+                  }
+                  break;
+              case SHIELDTYPE_RELAYSHIELD:
+                  shields[shield_index].dio_portcount = 0;
+                  shields[shield_index].ana_portcount = 0;
+                  break;
+          }
+          
+          shield_index++;
+      }
     }
 }
 void setup() {
@@ -793,18 +799,28 @@ void run_fastrate_code() //100 Hz
         {
           recv_configure_dioport_counter++;
           dioportconfig_messages_expected = messagecount;
+          Serial1.print("Received: ");
+          Serial1.print(messageindex,DEC);
+          Serial1.print("Out of: ");
+          Serial1.println(messagecount,DEC);
           int pinmodes[DIOPORT_SIZE] = {v1,v2,v3,v4,v5,v6,v7,v8};
           if(dioportconfigure_messages_received[messageindex-1] == false) //Dont reconfigure port with the same value
           {
             bool found_port = false;
             for(int s = 0; s < MAXNUMBER_SHIELDS; s++)
             {
+               Serial1.print("Got ID: ");
+               Serial1.print(ShieldID,DEC);
+               Serial1.print("Looking for: ");
+               Serial1.println(shields[s].id);
               if(shields[s].id == ShieldID)
               {
+                 Serial1.println("here3");// NOT GETTING HERE
                 for(int p = 0; p < shields[s].dio_portcount; p++)
                 {
                   if(shields[s].dio_ports[p].id == PortID)
                   {
+                     Serial1.println("here4");
                     found_port = true;
                     for(int j = 0; j < DIOPORT_SIZE; j++)
                     {
@@ -1026,6 +1042,8 @@ void run_mediumrate_code() //10 Hz
 }
 void run_slowrate_code() //1 Hz
 {
+  Serial1.print("Board Mode: ");
+  Serial1.println(board_mode,DEC);
   #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
   {
       update_lcd();
@@ -1057,6 +1075,7 @@ void run_slowrate_code() //1 Hz
     {
       for(int i = 0; i < dioportconfig_messages_expected; i++)
       {
+        Serial1.print(dioportconfigure_messages_received[i],DEC);
         if(dioportconfigure_messages_received[i] == true)
         {
           dioports_ready = dioports_ready and true;     
@@ -1067,6 +1086,10 @@ void run_slowrate_code() //1 Hz
         }
       }
     }
+    Serial1.print("/");
+    Serial1.print(dioportconfig_messages_expected,DEC);
+    Serial1.print(": ");
+    Serial1.println(dioports_ready,DEC);
 
     boolean anaports_ready = true;
     if(anaportconfig_messages_expected < 0) { anaports_ready = false; }
