@@ -225,6 +225,7 @@ String map_level_tostring(int v);
 String map_component_tostring(int v);
 String map_diagnostictype_tostring(int v);
 String map_message_tostring(int v);
+String map_mode_tostring(int v);
 
 void(*resetFunc)(void) = 0;
 void init_shields()
@@ -799,28 +800,19 @@ void run_fastrate_code() //100 Hz
         {
           recv_configure_dioport_counter++;
           dioportconfig_messages_expected = messagecount;
-          Serial1.print("Received: ");
-          Serial1.print(messageindex,DEC);
-          Serial1.print("Out of: ");
-          Serial1.println(messagecount,DEC);
           int pinmodes[DIOPORT_SIZE] = {v1,v2,v3,v4,v5,v6,v7,v8};
-          if(dioportconfigure_messages_received[messageindex-1] == false) //Dont reconfigure port with the same value
+          if(dioportconfigure_messages_received[messageindex] == false) //Dont reconfigure port with the same value
           {
             bool found_port = false;
             for(int s = 0; s < MAXNUMBER_SHIELDS; s++)
             {
-               Serial1.print("Got ID: ");
-               Serial1.print(ShieldID,DEC);
-               Serial1.print("Looking for: ");
-               Serial1.println(shields[s].id);
               if(shields[s].id == ShieldID)
               {
-                 Serial1.println("here3");// NOT GETTING HERE
                 for(int p = 0; p < shields[s].dio_portcount; p++)
                 {
                   if(shields[s].dio_ports[p].id == PortID)
                   {
-                     Serial1.println("here4");
+ 
                     found_port = true;
                     for(int j = 0; j < DIOPORT_SIZE; j++)
                     {
@@ -834,7 +826,10 @@ void run_fastrate_code() //100 Hz
                 }
               }
             }
-            if(found_port == true) { dioportconfigure_messages_received[messageindex-1] = true; }
+            if(found_port == true) 
+            { 
+              dioportconfigure_messages_received[messageindex] = true; 
+            }
             else
             {
               diagnostic_status.Diagnostic_Type = COMMUNICATIONS;
@@ -896,7 +891,7 @@ void run_fastrate_code() //100 Hz
           recv_configure_anaport_counter++;
           anaportconfig_messages_expected = messagecount;
           int pinmodes[ANAPORT_SIZE] = {v1,v2,v3,v4};
-          if(anaportconfigure_messages_received[messageindex-1] == false) //Dont reconfigure port with the same value
+          if(anaportconfigure_messages_received[messageindex] == false) //Dont reconfigure port with the same value
           {
             bool found_port = false;
             for(int s = 0; s < MAXNUMBER_SHIELDS; s++)
@@ -916,7 +911,7 @@ void run_fastrate_code() //100 Hz
                 }
               }
             }
-            if(found_port == true) { anaportconfigure_messages_received[messageindex-1] = true; }
+            if(found_port == true) { anaportconfigure_messages_received[messageindex] = true; }
           }
         }
       }
@@ -985,6 +980,43 @@ void run_mediumrate_code() //10 Hz
       }
     send_diagnostic_counter++;
   }
+  {
+    if(board_mode == BOARDMODE_RUNNING)
+    {
+      for(int s = 0; s < MAXNUMBER_SHIELDS; s++)
+      {
+        for(int p = 0; p < shields[s].ana_portcount; p++)
+        {
+          char buffer[16];
+          int length;
+          int computed_checksum;
+          
+          for(int j = 0; j < ANAPORT_SIZE; j++)
+          {
+            switch(shields[s].ana_ports[p].Pin_Mode[j])
+            {
+              case PINMODE_ANALOG_INPUT:
+              {
+                int tx_status = serialmessagehandler.encode_Get_ANA_PortSerial(buffer,&length,shields[s].id,shields[s].ana_ports[p].id,
+                  shields[s].ana_ports[p].Pin_Value[0],
+                  shields[s].ana_ports[p].Pin_Value[1],
+                  shields[s].ana_ports[p].Pin_Value[2],
+                  shields[s].ana_ports[p].Pin_Value[3]);
+                for(int i = 0; i < length; i++)
+                {
+                  Serial.write((byte)buffer[i]);
+                }
+                send_ana_counter++;
+                break;
+              }
+              default:
+                break;
+            }
+          }
+        }
+      }
+    }
+  }
   if(new_pps == 1)
   {
     new_pps = 0;
@@ -1004,19 +1036,7 @@ void run_mediumrate_code() //10 Hz
 
     if(board_mode == BOARDMODE_RUNNING)
     {
-      char buffer[16];
-      int length;
-      int computed_checksum;
-      int v1 = analogRead(ANALOG0);
-      int v2 = analogRead(ANALOG1);
-      int v3 = analogRead(ANALOG2);
-      int v4 = analogRead(ANALOG3);
-      int tx_status = serialmessagehandler.encode_Get_ANA_PortSerial(buffer,&length,0,0,v1,v2,v3,v4);
-      for(int i = 0; i < length; i++)
-      {
-        Serial.write((byte)buffer[i]);
-      }
-      send_ana_counter++;
+      
     }
       
   }
@@ -1042,8 +1062,21 @@ void run_mediumrate_code() //10 Hz
 }
 void run_slowrate_code() //1 Hz
 {
-  Serial1.print("Board Mode: ");
-  Serial1.println(board_mode,DEC);
+  #if(PRINT_DEBUG_LINES == 1)
+  {
+    #if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
+    {
+      Serial1.print("Board Mode: ");
+      Serial1.println(map_mode_tostring(board_mode));
+    }
+     #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
+     {
+      softSerial.print("Board Mode: ");
+      softSerial.println(map_mode_tostring(board_mode));
+     }
+     #endif
+  }
+  #endif
   #if ((SHIELD1_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_LCDSHIELD))
   {
       update_lcd();
@@ -1075,7 +1108,6 @@ void run_slowrate_code() //1 Hz
     {
       for(int i = 0; i < dioportconfig_messages_expected; i++)
       {
-        Serial1.print(dioportconfigure_messages_received[i],DEC);
         if(dioportconfigure_messages_received[i] == true)
         {
           dioports_ready = dioports_ready and true;     
@@ -1086,10 +1118,6 @@ void run_slowrate_code() //1 Hz
         }
       }
     }
-    Serial1.print("/");
-    Serial1.print(dioportconfig_messages_expected,DEC);
-    Serial1.print(": ");
-    Serial1.println(dioports_ready,DEC);
 
     boolean anaports_ready = true;
     if(anaportconfig_messages_expected < 0) { anaports_ready = false; }
@@ -1251,7 +1279,7 @@ void run_veryslowrate_code() //0.1 Hz
       Serial1.print(1000.0*(double)recv_configure_dioport_counter/(double)loop_counter);
       Serial1.println(" (Hz)");
 
-      Serial1.print("Send Configure ANAPort (0xAB17) times: ");
+      Serial1.print("Send Configure ANAPort (0xAB36) times: ");
       Serial1.print(send_configure_anaport_counter,DEC);
       Serial1.print(" at: ");
       Serial1.print(1000.0*(double)send_configure_anaport_counter/(double)loop_counter);
@@ -1342,7 +1370,7 @@ void run_veryslowrate_code() //0.1 Hz
       softSerial.print(1000.0*(double)recv_configure_dioport_counter/(double)loop_counter);
       softSerial.println(" (Hz)");
 
-      softSerial.print("Send Configure ANAPort (0xAB17) times: ");
+      softSerial.print("Send Configure ANAPort (0xAB36) times: ");
       softSerial.print(send_configure_anaport_counter,DEC);
       softSerial.print(" at: ");
       softSerial.print(1000.0*(double)send_configure_anaport_counter/(double)loop_counter);
@@ -1669,6 +1697,36 @@ String map_diagnostictype_tostring(int v)
       break;
     default:
       return "UNK";
+      break;
+  }
+}
+String map_mode_tostring(int v)
+{
+  switch(v)
+  {
+    case BOARDMODE_UNDEFINED:
+      return "UNDEFINED";
+      break;
+    case BOARDMODE_BOOTING:
+      return "BOOTING";
+      break;
+    case BOARDMODE_INITIALIZING:
+      return "INITIALIZING";
+      break;
+    case BOARDMODE_CONFIGURING:
+      return "CONFIGURING";
+      break;
+    case BOARDMODE_CONFIGURED:
+      return "CONFIGURED";
+      break;
+    case BOARDMODE_RUNNING:
+      return "BOARDMODE_RUNNING";
+      break;
+    case BOARDMODE_STOPPED:
+      return "STOPPED";
+      break;
+    default:
+      return "UNKNOWN";
       break;
   }
 }
