@@ -1,6 +1,4 @@
 //Board Configuration Defines
-#define PRINT_DEBUG_LINES 1
-
 #define BOARD_ID 17
 #define BOARD_TYPE BOARDTYPE_ARDUINOMEGA
 #define SHIELD1_TYPE SHIELDTYPE_TERMINALSHIELD
@@ -14,7 +12,7 @@
 
 
 //Useful Debug Defines
-#define PRINT_DEBUG_LINES 1
+#define PRINT_DEBUG_LINES 0
 
 #define FIRMWARE_MAJOR_VERSION 0
 #define FIRMWARE_MINOR_VERSION 5
@@ -773,10 +771,13 @@ void run_fastrate_code() //100 Hz
                 if(shields[s].dio_ports[p].id == PortID)
                 {
                   found_port = true;
+                  
                   for(int j = 0; j < DIOPORT_SIZE; j++)
                   {
+                    
                     shields[s].dio_ports[p].Pin_Value[j] = pinvalues[j];
                   }
+  
                 }
               }
             }
@@ -1242,7 +1243,11 @@ void run_veryslowrate_code() //0.1 Hz
   
   #if BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
   {
-    #if PRINT_DEBUG_LINES == 1
+      Serial1.print("Passed Checksum: ");
+      Serial1.print(passed_checksum_counter,DEC);
+      Serial1.print(" Failed Checksum: ");
+      Serial1.println(failed_checksum_counter,DEC);
+    #if(PRINT_DEBUG_LINES == 1)
     {
       Serial1.print("Passed Checksum: ");
       Serial1.print(passed_checksum_counter,DEC);
@@ -1464,6 +1469,11 @@ void SERVOSHIELD_setServoPulse(uint8_t n, uint16_t pulse_us,uint8_t shield)
   pulselength /= 4096;  // 12 bits of resolution
   pulse *= 1000;
   pulse /= pulselength;
+  Serial1.print("s: ");
+  Serial1.print(shield);
+  Serial1.print("p: ");
+  Serial1.println(pulse);
+  NOT sending PULSE TO PIN
   #if(SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) 
   {
     if(shield == 0)
