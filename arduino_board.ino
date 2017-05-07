@@ -754,7 +754,7 @@ void run_fastrate_code() //100 Hz
          recv_command_counter++;
         }
       }
-      else if(message_type == SET_DIO_PORT_ID)
+      else if(message_type == SERIAL_Set_DIO_Port_ID)
       {
         unsigned char ShieldID,PortID;
         unsigned char v1,v2,v3,v4,v5,v6,v7,v8;
