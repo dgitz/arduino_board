@@ -2,13 +2,13 @@
 #define BOARD_ID 17
 #define BOARD_TYPE BOARDTYPE_ARDUINOMEGA
 #define SHIELD1_TYPE SHIELDTYPE_TERMINALSHIELD
-#define SHIELD1_ID 0 //Hex
+#define SHIELD1_ID 0 
 #define SHIELD2_TYPE SHIELDTYPE_SERVOSHIELD
-#define SHIELD2_ID 40 //Hex
+#define SHIELD2_ID 64 
 #define SHIELD3_TYPE SHIELDTYPE_NONE
-#define SHIELD3_ID 0 //Hex
+#define SHIELD3_ID 0 
 #define SHIELD4_TYPE SHIELDTYPE_NONE
-#define SHIELD4_ID 0 //Hex
+#define SHIELD4_ID 0 
 
 
 //Useful Debug Defines
@@ -191,6 +191,8 @@ unsigned long level_notice_counter = 0;
 unsigned long level_warn_counter = 0;
 unsigned long level_error_counter = 0;
 unsigned long level_fatal_counter = 0;
+unsigned long recv_byte_counter = 0;
+unsigned long send_byte_counter = 0;
 int comm_established_once = 0;
 
 
@@ -962,6 +964,7 @@ void run_mediumrate_code() //10 Hz
     for(int i = 0; i < length; i++)
     {
       Serial.write((byte)buffer[i]);
+      send_byte_counter++;
     }
     send_mode_counter++;
   }
@@ -978,6 +981,7 @@ void run_mediumrate_code() //10 Hz
       for(int i = 0; i < length; i++)
       {
         Serial.write((byte)buffer[i]);
+        send_byte_counter++;
       }
     send_diagnostic_counter++;
   }
@@ -1006,6 +1010,7 @@ void run_mediumrate_code() //10 Hz
                 for(int i = 0; i < length; i++)
                 {
                   Serial.write((byte)buffer[i]);
+                  send_byte_counter++;
                 }
                 send_ana_counter++;
                 break;
@@ -1028,6 +1033,7 @@ void run_mediumrate_code() //10 Hz
     for(int i = 0; i < length; i++)
     {
       Serial.write((byte)buffer[i]);
+      send_byte_counter++;
     }
     send_pps_counter++;
     }
@@ -1247,6 +1253,12 @@ void run_veryslowrate_code() //0.1 Hz
       Serial1.print(passed_checksum_counter,DEC);
       Serial1.print(" Failed Checksum: ");
       Serial1.println(failed_checksum_counter,DEC);
+      
+      Serial1.print("Sent Bytes: ");
+      Serial1.print(1000.0*(double)send_byte_counter/(double)loop_counter);
+      Serial1.print(" (Bps) Recvd: ");
+      Serial1.print(1000.0*(double)recv_byte_counter/(double)loop_counter);
+      Serial1.println(" (Bps)");
     #if(PRINT_DEBUG_LINES == 1)
     {
       Serial1.print("Passed Checksum: ");
@@ -1434,28 +1446,15 @@ void serialEvent()
   if(message_complete == false)
   {
     char c;
-    int bytestoread = SERIAL_MESSAGE_SIZE;
     int bytecounter = 0;
-    while((Serial.available()) && (bytecounter < bytestoread))
+    while((Serial.available()) && (bytecounter < SERIAL_MESSAGE_SIZE))
     {
         c = Serial.read();  
         delay(1);   
         recv_buffer[bytecounter++] = c;
-      
+        recv_byte_counter++;
     }
-    /*
-    if((BOARD_TYPE == BOARDTYPE_ARDUINOMEGA) && (PRINT_RECV_BUFFER == 1))
-    {
-      for(int i = 0; i < SERIAL_MESSAGE_SIZE; i++)
-      {
-        Serial1.print(" ");
-        Serial1.print(recv_buffer[i],HEX);
-      }
-      Serial1.println("");
-    }
-    */
     message_complete = true;
-
   }
 }
 //#if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
