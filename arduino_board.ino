@@ -116,6 +116,7 @@ void run_fastrate_code(); //100 Hz
 void run_mediumrate_code(); //10 Hz
 void run_slowrate_code(); //1 Hz
 void run_veryslowrate_code(); //0.1 Hz
+void scan_for_shields();
 
 #if(SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) 
   Adafruit_PWMServoDriver pwm1 = Adafruit_PWMServoDriver(SHIELD1_ID);
@@ -461,7 +462,7 @@ void setup() {
   wdt_reset();
   board_mode = BOARDMODE_INITIALIZING;
   init_shields();
-  
+  scan_for_shields();
   wdt_reset();
   
   #if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
@@ -1789,5 +1790,44 @@ String map_message_tostring(int v)
       return "Unknown";
       break;
   }
+}
+void scan_for_shields()
+{
+  Wire.begin();
+  byte error;
+  int found_index = 0;
+  int available_i2c_devices[MAXNUMBER_SHIELDS*10];
+  for(int i = 1; i < 127; i++)
+  {
+    wdt_reset();
+    Wire.beginTransmission(i);
+    //Wire.write(1);
+    error = Wire.endTransmission();
+    if(error == 0)
+    {
+      available_i2c_devices[found_index++] = i;
+    }
+    else
+    {
+    }
+    delay(10);
+  }
+  #if(BOARD_TYPE == BOARDTYPE_ARDUINOMEGA)
+  {  
+    for(int i = 0; i < found_index; i++)
+    {
+      Serial1.print("Found I2C Device at Address: ");
+      Serial1.println(available_i2c_devices[i],HEX);
+    }
+  }
+  #elif(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
+  {
+    for(int i = 0; i < found_index; i++)
+    {
+      softSerial.print("Found I2C Device at Address: ");
+      softSerial.println(available_i2c_devices[i],HEX);
+    }
+  }
+  #endif
 }
 
