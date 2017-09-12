@@ -34,12 +34,17 @@
 //Defines for SPI Comm between Raspberry Pi and Arduino Board
 unsigned char transmitBuffer[14];
 unsigned char receiveBuffer[14];
+unsigned char outputBuffer_AB14[13];
+byte current_command = 0;
+int outputBuffer_index = 0;
 int received_command = 0;
 int message_ready_to_send = 0;
 int receive_index = 0;
 int message_index = 0;
 byte marker = 0;
 unsigned char dat;
+int compute_checksum(unsigned char * outputbuffer);
+
 
 
 //Configuration defines for individual Shield Types
@@ -100,15 +105,8 @@ unsigned int armed_command = ROVERCOMMAND_DISARM;
 unsigned int armed_state = ARMEDSTATUS_DISARMED_CANNOTARM;
 unsigned char recv_buffer[32];
 int available_i2c_devices[MAXNUMBER_SHIELDS*2];
-int current_message_buffer_length = 0;
-int message_length = 0;
-int message_type = 0;
-int message_checksum = 0;
 int passed_checksum_counter = 0;
 int failed_checksum_counter = 0;
-boolean message_started = false;
-boolean message_complete = false;  // whether the string is complete
-bool new_message = false;
 
 //Board Definitions
 #if(BOARD_TYPE == BOARDTYPE_ARDUINOUNO)
@@ -185,7 +183,25 @@ String map_component_tostring(int v);
 String map_diagnostictype_tostring(int v);
 String map_message_tostring(int v);
 
+int process_AB14_Command();
+
 void(*resetFunc)(void) = 0;
+
+//Message processing functions.  This should be as fast as possible
+int process_AB14_Command()
+{
+  for(int i = 0; i < 9; i++)
+  {
+    outputBuffer_AB14[i] = transmit_testcounter;
+    transmit_testcounter+=1; //Rolls over automatically due to overflow
+  }
+  for(int i = 9; i < 12; i++)
+  {
+    outputBuffer_AB14[i] = transmit_testcounter;
+    transmit_testcounter-=1; //Rolls over automatically due to overflow
+  }
+}
+
 void init_shields()
 {
  
@@ -380,6 +396,49 @@ void run_veryslowrate_code() //0.1 Hz
 }
 void spiHandler()
 {
+  if(marker == 0)
+  {
+    dat = SPDR;
+    if(dat == 0xAB)
+    {
+      SPDR = 'a';
+      marker++;
+    }
+  }
+  else if(marker == 1)
+  {
+    dat = SPDR;
+    current_command = dat;
+    if(current_command == 0x14)
+    {
+      process_AB14_Command();
+    }
+    marker++;
+  }
+  else if(marker == 14)
+  {
+    int checksum = 0;
+    if(current_command == 0x14)
+    {
+      checksum = compute_checksum(outputBuffer_AB14);
+    }
+    SPDR = checksum;
+    marker = 0;
+  }
+  else
+  {
+    if(current_command == 0x14)
+    {
+      SPDR = outputBuffer_AB14[outputBuffer_index];
+    }
+    outputBuffer_index++;
+    marker++;
+    if(outputBuffer_index == 12)
+    {
+      outputBuffer_index = 0;
+    }
+  }
+  /*
   switch (marker)
   {
   case 0:
@@ -462,7 +521,7 @@ void spiHandler()
     marker=0;
     break;   
   }
-
+  */
 }
 #if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
 void SERVOSHIELD_setServoPulse(uint8_t n, uint16_t pulse_us)
@@ -730,5 +789,14 @@ String map_message_tostring(int v)
       return "Unknown";
       break;
   }
+}
+int compute_checksum(unsigned char * outputbuffer)
+{
+  int checksum = 0;
+  for(int i = 0; i < 12; i++)
+  {
+    checksum ^= outputbuffer[i];
+  }
+  return checksum;
 }
 
