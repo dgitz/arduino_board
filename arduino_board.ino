@@ -16,7 +16,7 @@
 
 #include "Arduino.h"
 #include <SoftwareSerial.h>
-#include "serialmessage.h"
+#include "spimessage.h"
 #include "Definitions.h"
 
 #include <Wire.h>
@@ -190,17 +190,20 @@ void(*resetFunc)(void) = 0;
 //Message processing functions.  This should be as fast as possible
 int process_AB14_Command()
 {
-  for(int i = 0; i < 9; i++)
-  {
-    outputBuffer_AB14[i] = transmit_testcounter;
-    transmit_testcounter+=1; //Rolls over automatically due to overflow
-  }
-  for(int i = 9; i < 12; i++)
-  {
-    outputBuffer_AB14[i] = transmit_testcounter;
-    transmit_testcounter-=1; //Rolls over automatically due to overflow
-  }
-}
+  int msg_length;
+  encode_TestMessageCounterSPI(outputBuffer_AB14,&msg_length,
+    transmit_testcounter++,
+    transmit_testcounter++,
+    transmit_testcounter++,
+    transmit_testcounter++,
+    transmit_testcounter++,
+    transmit_testcounter++,
+    transmit_testcounter++,
+    transmit_testcounter++,
+    transmit_testcounter++,
+    transmit_testcounter--,
+    transmit_testcounter--,
+    transmit_testcounter--);}
 
 void init_shields()
 {
@@ -409,34 +412,26 @@ void spiHandler()
   {
     dat = SPDR;
     current_command = dat;
-    if(current_command == 0x14)
+    if(current_command == SPI_TestMessageCounter_ID)
     {
       process_AB14_Command();
     }
     marker++;
   }
-  else if(marker == 14)
-  {
-    int checksum = 0;
-    if(current_command == 0x14)
-    {
-      checksum = compute_checksum(outputBuffer_AB14);
-    }
-    SPDR = checksum;
-    marker = 0;
-  }
   else
   {
-    if(current_command == 0x14)
+    if(current_command == SPI_TestMessageCounter_ID)
     {
       SPDR = outputBuffer_AB14[outputBuffer_index];
     }
     outputBuffer_index++;
     marker++;
-    if(outputBuffer_index == 12)
+    if(outputBuffer_index == 13)
     {
       outputBuffer_index = 0;
+        marker = 0;
     }
+   
   }
   /*
   switch (marker)
