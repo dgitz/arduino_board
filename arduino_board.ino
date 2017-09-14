@@ -1,14 +1,4 @@
 //Configuration Defines
-#define BOARD_ID 18
-#define BOARD_TYPE BOARDTYPE_ARDUINOUNO
-#define PRINT_DEBUG_LINES 1
-#define BYPASS_SHIELDCONFIG 0
-#define SHIELD1_TYPE SHIELDTYPE_NONE
-#define SHIELD2_TYPE SHIELDTYPE_NONE
-#define SHIELD3_TYPE SHIELDTYPE_NONE
-#define SHIELD4_TYPE SHIELDTYPE_NONE
-
-
 
 #define FIRMWARE_MAJOR_VERSION 1
 #define FIRMWARE_MINOR_VERSION 0
@@ -21,6 +11,7 @@
 
 #include <Wire.h>
 #include <avr/wdt.h>
+#include "config.h"
 
 
 #define MAXNUMBER_SHIELDS 4
@@ -30,11 +21,14 @@
 #define MAXNUMBER_PORTS_PERSHIELD 2
 #endif
 #define PORT_SIZE        8
+#define ANA_PORT_SIZE    6
 
 //Defines for SPI Comm between Raspberry Pi and Arduino Board
 unsigned char transmitBuffer[14];
 unsigned char receiveBuffer[14];
 unsigned char outputBuffer_AB14[13];
+unsigned char outputBuffer_AB20[13];
+bool run_spi_handler = false;
 byte current_command = 0;
 int outputBuffer_index = 0;
 int received_command = 0;
@@ -80,6 +74,16 @@ typedef struct
   int Pin_Value[PORT_SIZE];
   int Pin_DefaultValue[PORT_SIZE];
 } port;
+
+typedef struct
+{
+  int id;
+  int Pin_Number[ANA_PORT_SIZE];
+  unsigned int Pin_Value[ANA_PORT_SIZE];
+  unsigned int Pin_DefaultValue[ANA_PORT_SIZE];
+  bool Pin_Used[ANA_PORT_SIZE];
+} ana_port;
+
 typedef struct
 {
   int id;
@@ -89,6 +93,7 @@ typedef struct
   port ports[MAXNUMBER_PORTS_PERSHIELD];
 } shield;
 
+ana_port ANAPORT1;
 shield shields[MAXNUMBER_SHIELDS];
 void run_veryfastrate_code(); //1000 Hz
 void run_fastrate_code(); //100 Hz
@@ -183,12 +188,14 @@ String map_component_tostring(int v);
 String map_diagnostictype_tostring(int v);
 String map_message_tostring(int v);
 
-int process_AB14_Command();
+int process_AB14_Query();
+int process_AB20_Query();
+
 
 void(*resetFunc)(void) = 0;
 
 //Message processing functions.  This should be as fast as possible
-int process_AB14_Command()
+int process_AB14_Query()
 {
   int msg_length;
   encode_TestMessageCounterSPI(outputBuffer_AB14,&msg_length,
@@ -203,8 +210,20 @@ int process_AB14_Command()
     transmit_testcounter++,
     transmit_testcounter--,
     transmit_testcounter--,
-    transmit_testcounter--);}
-
+    transmit_testcounter--);
+}
+int process_AB20_Query()
+{
+  int msg_length;
+  encode_Get_ANA_Port1SPI(outputBuffer_AB20,&msg_length,
+    ANAPORT1.Pin_Value[0],
+    ANAPORT1.Pin_Value[1],
+    ANAPORT1.Pin_Value[2],
+    ANAPORT1.Pin_Value[3],
+    ANAPORT1.Pin_Value[4],
+    ANAPORT1.Pin_Value[5]);
+    //Serial.println(outputBuffer_AB20[0],DEC);
+}
 void init_shields()
 {
  
@@ -212,6 +231,25 @@ void init_shields()
 void setup() {
   wdt_disable();
   wdt_enable(WDTO_1S);
+  //Setup pins
+
+  //Setup ANAPORT1
+  ANAPORT1.id = 1;
+  for(int i = 0; i < ANA_PORT_SIZE; i++)
+  {
+    if(AnalogInputPort1[i] < 0) 
+    {  
+      ANAPORT1.Pin_Used[i] = false;   
+      ANAPORT1.Pin_Value[i] = 0;
+    }
+    else
+    {
+      ANAPORT1.Pin_Used[i] = true;
+      ANAPORT1.Pin_Number[i] = AnalogInputPort1[i];
+      ANAPORT1.Pin_Value[i] = 0;
+      ANAPORT1.Pin_DefaultValue[i] = 0;
+    }
+  }
   pinMode(LED,OUTPUT);
   pinMode(MISO, OUTPUT);
   SPCR |= _BV(SPE);
@@ -307,40 +345,42 @@ void loop()
   wdt_reset();
   if((SPSR & (1 << SPIF)) != 0)
   {
+    run_spi_handler = true;
     spiHandler();
   }
-  //SERVOSHIELD_setServoPulse(0, 2000);
-  //delay(1); //Delay 1 millisecond
-  loop_counter++;
-  veryfastrate_counter++;
-  fastrate_counter++;
-  mediumrate_counter++;
-  slowrate_counter++;
-  veryslowrate_counter++;
-  if(veryfastrate_counter >= 1)
+  if(run_spi_handler == false)
   {
-    veryfastrate_counter = 0;
-    run_veryfastrate_code();
-  }   
-  if(fastrate_counter >= 10)
-  {
-    fastrate_counter = 0;
-    run_fastrate_code();
-  }
-  if(mediumrate_counter >= 100)
-  {
-    mediumrate_counter = 0;
-    run_mediumrate_code();
-  }
-  if(slowrate_counter >= 1000)
-  {
-    slowrate_counter = 0;
-    run_slowrate_code();
-  }
-  if(veryslowrate_counter >= 10000)
-  {
-    veryslowrate_counter = 0;
-    run_veryslowrate_code();
+    loop_counter++;
+    veryfastrate_counter++;
+    fastrate_counter++;
+    mediumrate_counter++;
+    slowrate_counter++;
+    veryslowrate_counter++;
+    if(veryfastrate_counter >= 1)
+    {
+      veryfastrate_counter = 0;
+      run_veryfastrate_code();
+    }   
+    if(fastrate_counter >= 10)
+    {
+      fastrate_counter = 0;
+      run_fastrate_code();
+    }
+    if(mediumrate_counter >= 100)
+    {
+      mediumrate_counter = 0;
+      run_mediumrate_code();
+    }
+    if(slowrate_counter >= 1000)
+    {
+      slowrate_counter = 0;
+      run_slowrate_code();
+    }
+    if(veryslowrate_counter >= 10000)
+    {
+      veryslowrate_counter = 0;
+      run_veryslowrate_code();
+    }
   }
   if(loop_counter > 2147483648) //Half of unsigned long (max)
   {
@@ -369,6 +409,15 @@ void run_veryfastrate_code() //1000 Hz
 }
 void run_fastrate_code() //100 Hz
 {
+  //Read ANAPORT1
+  for(int i = 0; i < ANA_PORT_SIZE; i++)
+  {
+    if(ANAPORT1.Pin_Used[i] == true)
+    {
+      ANAPORT1.Pin_Value[i] = analogRead(ANAPORT1.Pin_Number[i]);
+    }
+     
+  }
   
       
 }
@@ -377,6 +426,7 @@ void run_mediumrate_code() //10 Hz
 }
 void run_slowrate_code() //1 Hz
 {  
+  
   digitalWrite(LED,!digitalRead(LED));
  // Serial.println("Running...");
 }
@@ -414,7 +464,11 @@ void spiHandler()
     current_command = dat;
     if(current_command == SPI_TestMessageCounter_ID)
     {
-      process_AB14_Command();
+      process_AB14_Query();
+    }
+    else if(current_command == SPI_Get_ANA_Port1_ID)
+    {
+      process_AB20_Query();
     }
     marker++;
   }
@@ -424,12 +478,17 @@ void spiHandler()
     {
       SPDR = outputBuffer_AB14[outputBuffer_index];
     }
+    else if(current_command == SPI_Get_ANA_Port1_ID)
+    {
+      SPDR = outputBuffer_AB20[outputBuffer_index];
+    }
     outputBuffer_index++;
     marker++;
     if(outputBuffer_index == 13)
     {
       outputBuffer_index = 0;
         marker = 0;
+        run_spi_handler = false;
     }
    
   }
