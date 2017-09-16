@@ -20,13 +20,14 @@
 #elif BOARD_TYPE == BOARDTYPE_ARDUINOMEGA
 #define MAXNUMBER_PORTS_PERSHIELD 2
 #endif
-#define PORT_SIZE        8
+#define DIO_PORT_SIZE    8
 #define ANA_PORT_SIZE    6
 
 //Defines for SPI Comm between Raspberry Pi and Arduino Board
-unsigned char transmitBuffer[14];
-unsigned char receiveBuffer[14];
+//unsigned char transmitBuffer[14];
+//unsigned char receiveBuffer[14];
 unsigned char outputBuffer_AB14[13];
+unsigned char outputBuffer_AB19[13];
 unsigned char outputBuffer_AB20[13];
 bool run_spi_handler = false;
 byte current_command = 0;
@@ -69,11 +70,12 @@ int compute_checksum(unsigned char * outputbuffer);
 typedef struct
 {
   int id;
-  int Pin_Number[PORT_SIZE];
-  int Pin_Mode[PORT_SIZE];
-  int Pin_Value[PORT_SIZE];
-  int Pin_DefaultValue[PORT_SIZE];
-} port;
+  int Pin_Mode[DIO_PORT_SIZE];
+  int Pin_Number[DIO_PORT_SIZE];
+  unsigned int Pin_Value[DIO_PORT_SIZE];
+  unsigned int Pin_DefaultValue[DIO_PORT_SIZE];
+  bool Pin_Used[DIO_PORT_SIZE];
+} dio_port;
 
 typedef struct
 {
@@ -84,17 +86,8 @@ typedef struct
   bool Pin_Used[ANA_PORT_SIZE];
 } ana_port;
 
-typedef struct
-{
-  int id;
-  int type;
-  boolean isconfigured;
-  int portcount;
-  port ports[MAXNUMBER_PORTS_PERSHIELD];
-} shield;
-
 ana_port ANAPORT1;
-shield shields[MAXNUMBER_SHIELDS];
+dio_port DIOPORT1;
 void run_veryfastrate_code(); //1000 Hz
 void run_fastrate_code(); //100 Hz
 void run_mediumrate_code(); //10 Hz
@@ -189,6 +182,7 @@ String map_diagnostictype_tostring(int v);
 String map_message_tostring(int v);
 
 int process_AB14_Query();
+int process_AB19_Query();
 int process_AB20_Query();
 
 
@@ -212,6 +206,19 @@ int process_AB14_Query()
     transmit_testcounter--,
     transmit_testcounter--);
 }
+int process_AB19_Query()
+{
+  int msg_length;
+  encode_Get_DIO_Port1SPI(outputBuffer_AB19,&msg_length,
+    DIOPORT1.Pin_Value[0],
+    DIOPORT1.Pin_Value[1],
+    DIOPORT1.Pin_Value[2],
+    DIOPORT1.Pin_Value[3],
+    DIOPORT1.Pin_Value[4],
+    DIOPORT1.Pin_Value[5],
+    DIOPORT1.Pin_Value[6],
+    DIOPORT1.Pin_Value[7]);
+}
 int process_AB20_Query()
 {
   int msg_length;
@@ -222,7 +229,6 @@ int process_AB20_Query()
     ANAPORT1.Pin_Value[3],
     ANAPORT1.Pin_Value[4],
     ANAPORT1.Pin_Value[5]);
-    //Serial.println(outputBuffer_AB20[0],DEC);
 }
 void init_shields()
 {
@@ -248,6 +254,26 @@ void setup() {
       ANAPORT1.Pin_Number[i] = AnalogInputPort1[i];
       ANAPORT1.Pin_Value[i] = 0;
       ANAPORT1.Pin_DefaultValue[i] = 0;
+    }
+  }
+
+  //Setup DIOPORT1
+  DIOPORT1.id = 1;
+  for(int i = 0; i < DIO_PORT_SIZE; i++)
+  {
+    if(DigitalPort1_Pins[i] < 0)
+    {
+      DIOPORT1.Pin_Used[i] = false;   
+      DIOPORT1.Pin_Value[i] = 0;
+      DIOPORT1.Pin_Mode[i] = PINMODE_NOTAVAILABLE;
+    }
+    else
+    {
+      DIOPORT1.Pin_Used[i] = true;
+      DIOPORT1.Pin_Number[i] = DigitalPort1_Pins[i];
+      DIOPORT1.Pin_Value[i] = 0;
+      DIOPORT1.Pin_DefaultValue[i] = DigitalPort1_DefaultValue[i];
+      DIOPORT1.Pin_Mode[i] = DigitalPort1_Mode[i];
     }
   }
   pinMode(LED,OUTPUT);
@@ -415,8 +441,22 @@ void run_fastrate_code() //100 Hz
     if(ANAPORT1.Pin_Used[i] == true)
     {
       ANAPORT1.Pin_Value[i] = analogRead(ANAPORT1.Pin_Number[i]);
-    }
-     
+    }  
+  }
+  //Read DIOPORT1 and Set DIOPORT1
+  for(int i = 0; i < DIO_PORT_SIZE; i++)
+  {
+    if(DIOPORT1.Pin_Used[i] == true)
+    {
+      if(DIOPORT1.Pin_Mode[i] == PINMODE_DIGITAL_INPUT)
+      {
+        DIOPORT1.Pin_Value[i] = digitalRead(DIOPORT1.Pin_Number[i]);
+      }
+      else //Not currently supported
+      {
+        
+      }
+    }  
   }
   
       
@@ -466,6 +506,10 @@ void spiHandler()
     {
       process_AB14_Query();
     }
+    if(current_command == SPI_Get_DIO_Port1_ID)
+    {
+      process_AB19_Query();
+    }
     else if(current_command == SPI_Get_ANA_Port1_ID)
     {
       process_AB20_Query();
@@ -478,6 +522,10 @@ void spiHandler()
     {
       SPDR = outputBuffer_AB14[outputBuffer_index];
     }
+    else if(current_command == SPI_Get_DIO_Port1_ID)
+    {
+      SPDR = outputBuffer_AB19[outputBuffer_index];
+    }
     else if(current_command == SPI_Get_ANA_Port1_ID)
     {
       SPDR = outputBuffer_AB20[outputBuffer_index];
@@ -487,95 +535,10 @@ void spiHandler()
     if(outputBuffer_index == 13)
     {
       outputBuffer_index = 0;
-        marker = 0;
-        run_spi_handler = false;
+      marker = 0;
+      run_spi_handler = false;
     }
-   
   }
-  /*
-  switch (marker)
-  {
-  case 0:
-    dat = SPDR;
-    if (dat == 0xAB)
-    {
-      SPDR = 'a';
-      marker++;
-    } 
-    break;    
-  case 1:
-    receiveBuffer[marker-1] = SPDR;
-    marker++;
-    break;
-  case 2:
-    transmit_testcounter++;
-    if(transmit_testcounter > 255)
-    {
-      transmit_testcounter = 0;
-    }
-    SPDR = transmit_testcounter;
-    marker++;
-    break; 
-  case 3:
-    transmit_testcounter++;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;   
-  case 4:
-    transmit_testcounter++;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;  
-  case 5:
-    transmit_testcounter++;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;  
-  case 6:
-    transmit_testcounter++;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;  
-  case 7:
-    transmit_testcounter++;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;  
-  case 8:
-    transmit_testcounter++;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;  
-  case 9:
-    transmit_testcounter--;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;  
-  case 10:
-    transmit_testcounter--;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;  
-  case 11:
-    transmit_testcounter--;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;  
-  case 12:
-    transmit_testcounter--;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;  
-  case 13:
-    transmit_testcounter--;
-    SPDR = transmit_testcounter;
-    marker++;
-    break;  
-  case 14:
-    marker=0;
-    break;   
-  }
-  */
 }
 #if ((SHIELD1_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD2_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD) || (SHIELD3_TYPE == SHIELDTYPE_SERVOSHIELD))
 void SERVOSHIELD_setServoPulse(uint8_t n, uint16_t pulse_us)
